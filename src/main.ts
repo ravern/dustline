@@ -325,7 +325,7 @@ function animate(ms:number){
   accumulator+=dt;let steps=0;while(accumulator>=DT&&steps<6){fixedStep();accumulator-=DT;steps++;}
   correction.multiplyScalar(Math.exp(-dt*20));
   const current=weaponForSlot(self?.loadout||loadout,slot);view.setWeapon(current);
-  const now=net.now();const aiming=ads&&!!document.pointerLockElement&&self?.hp!==0&&!!self&&reloadUntil()<=now&&body?.stance!=='slide';
+  const now=net.now();const aiming=ads&&slot!==2&&!!document.pointerLockElement&&self?.hp!==0&&!!self&&reloadUntil()<=now&&body?.stance!=='slide';
   const sprint=!!body&&Math.hypot(body.vx,body.vz)>7&&body.stance==='stand'&&!aiming;
   const reloadProgress=self&&reloadUntil()>now?THREE.MathUtils.clamp(1-(reloadUntil()-now)/WEAPONS[current].reloadTime,0,1):0;
   view.draw(time,dt,body,yaw,pitch,phase!=='menu',aiming,sprint,reloadProgress,!!self&&self.hp>0,interpolatedPlayers(),net.id,correction,phase==='menu'&&page==='loadout'&&previewReady);
