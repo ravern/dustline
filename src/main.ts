@@ -148,7 +148,7 @@ document.addEventListener('pointerlockchange',()=>{resetControls();syncOverlays(
 document.addEventListener('pointerlockerror',()=>{if(phase==='playing')syncOverlays();});
 addEventListener('blur',resetControls);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)resetControls();});
-addEventListener('contextmenu',e=>{if(phase==='playing')e.preventDefault();});
+for(const event of ['contextmenu','auxclick'])addEventListener(event,e=>{switch(phase==='playing'||settingsOpen){case true:e.preventDefault();}});
 addEventListener('mousemove',e=>{if(!document.pointerLockElement||phase!=='playing'||self?.hp===0)return;const factor=.0021*view.sensitivity*(view.ads>.5?(slot===0&&loadout.primary==='intervention'?.25:.72):1);yaw-=e.movementX*factor;pitch=THREE.MathUtils.clamp(pitch-e.movementY*factor,-1.45,1.45);});
 function paintBindings(){
   $('keybind-list').innerHTML=ACTIONS.map(action=>`<div class="binding-row"><span>${CONTROLS[action].label}</span><button type="button" data-bind="${action}" aria-label="Change ${CONTROLS[action].label}" aria-pressed="${captureBinding===action}">${captureBinding===action?'Press a key or mouse button…':bindings[action].map(controlLabel).join(' / ')}</button></div>`).join('');
