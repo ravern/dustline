@@ -1,6 +1,6 @@
 import type { Box, Vec3 } from './types.ts';
 
-export type MapId = 'yard' | 'foundry' | 'relay' | 'bazaar' | 'harbor' | 'citadel' | 'junction' | 'oasis' | 'overpass';
+export type MapId = 'yard' | 'foundry' | 'relay' | 'bazaar' | 'harbor' | 'citadel' | 'junction' | 'oasis' | 'overpass' | 'canal' | 'crossfire' | 'hangar' | 'quarry' | 'outpost' | 'gardens' | 'vault' | 'terminal' | 'switchback';
 export interface MapDefinition {
   id: MapId; name: string; subtitle: string; size: number; boxes: Box[]; spawns: Vec3[];
   teamSpawns: { red: Vec3[]; blue: Vec3[] };
@@ -256,7 +256,95 @@ const overpass=arena('overpass','Overpass','Bridge crossing above covered ground
     ]),
   ]);
 
-export const MAPS: readonly MapDefinition[] = [yard,foundry,relay,bazaar,harbor,citadel,junction,oasis,overpass];
+const canal=arena('canal','Canal','Parallel banks with three crossing points',84,
+  {sky:0xb4ced0,ground:0x94a6a0,fog:.004,sun:0xe7f6ef,steel:0x526e70,accent:0x85b3a9},[
+    // Raised banks split the center; three gaps connect the ground lanes.
+    ...[-1,1].flatMap(s=>[
+      solid(s*6,-18,2,16,2.5,'wall',0xa7b7ad),solid(s*6,18,2,16,2.5,'wall',0xa7b7ad),
+      solid(s*23,s*21,10,5,4,'wall',0x9bafa8),solid(s*24,-s*6,7,7,3,'wall',0xc1b798),
+      solid(s*16,-s*21,3,3,1.5,'crate'),solid(s*27,s*9,1,5,1.3,'barrier'),
+    ]),solid(0,0,3,3,1,'plinth',0x6d9794),
+  ]);
+const crossfire=arena('crossfire','Crossfire','Offset streets around a central block',80,
+  {sky:0xcac1b5,ground:0xaca190,fog:.004,sun:0xffdeb9,steel:0x736c64,accent:0xc08d5e},[
+    solid(0,0,12,14,6,'wall',0xc6b69b),
+    ...[-1,1].flatMap(s=>[
+      solid(s*22,s*16,8,14,5,'wall',0x9b8b7c),solid(-s*16,s*25,12,3,4,'wall',0xbba48b),
+      solid(s*18,-s*8,8,3,4,'wall',0xc2ac91),solid(s*10,s*20,2,3,1.5,'crate'),
+      solid(s*29,-s*19,3,4,2,'generator'),solid(s*3,s*23,3,1,1.3,'barrier'),
+    ]),
+  ]);
+const hangar=arena('hangar','Hangar','Twin covered halls with a service yard',88,
+  {sky:0xbcc9d2,ground:0x929ea3,fog:.004,sun:0xe8f0ff,steel:0x536c7d,accent:0xd6a659},[
+    ...[-1,1].flatMap(s=>[
+      // Open ends and side doors keep each roofed hall accessible.
+      {x:s*21,y:5.8,z:0,w:18,h:.4,d:32,kind:'deck'},
+      ...[-1,1].flatMap(z=>[
+        solid(s*29,z*11,1,10,5.6,'wall',0x8296a2),solid(s*13,z*11,1,10,5.6,'wall',0x8296a2),
+      ]),
+      solid(s*21,s*6,8,3,2.8,'container',0x637e8e),solid(s*21,-s*7,3,4,2,'generator'),
+      solid(s*8,s*26,9,2,1.3,'barrier'),solid(-s*30,s*27,3,3,1.5,'crate'),
+    ]),solid(0,0,3,8,2.4,'generator',0x8c988b),
+  ]);
+const quarry=arena('quarry','Quarry','Stone terraces with narrow cut-throughs',88,
+  {sky:0xd5cbbb,ground:0xbfb09a,fog:.004,sun:0xffe4c2,steel:0x756f60,accent:0xd6ad57},[
+    ...[-1,1].flatMap(s=>[
+      solid(s*20,s*18,15,9,5,'wall',0xa99d86),solid(-s*25,s*6,7,12,4,'wall',0xb9aa8c),
+      solid(s*8,s*6,7,6,3,'wall',0xc5b494),solid(s*30,-s*23,3,3,1.8,'crate'),
+      solid(s*4,s*27,5,2,1.3,'barrier'),
+      // Four broad low ledges give a route onto the side shelf.
+      ...Array.from({length:4},(_,i)=>solid(s*19,-s*(21-i*1.2),5,1.3,(i+1)*.3,'stairs')),
+      solid(s*19,-s*14,5,7,1.2,'plinth',0x9d927e),
+    ]),solid(0,0,2,2,2,'wall',0xb9aa8c),
+  ]);
+const outpost=arena('outpost','Outpost','Four compounds around an open crossroads',84,
+  {sky:0xb8c8b9,ground:0x9da58a,fog:.004,sun:0xffebc8,steel:0x606f5a,accent:0xc2af5d},[
+    ...[-1,1].flatMap(x=>[-1,1].flatMap(z=>[
+      solid(x*19,z*17,9,10,4,'wall',0x85917b),
+      solid(x*8,z*19,3,1,1.3,'barrier'),solid(x*23,z*6,1,5,1.3,'barrier'),
+      solid(x*29,z*24,3,3,1.5,'crate'),
+    ])),solid(0,0,4,4,2.4,'generator',0x74836f),
+  ]);
+const gardens=arena('gardens','Gardens','Walled gardens around a pavilion',80,
+  {sky:0xc6d7c6,ground:0x91a58a,fog:.004,sun:0xffefce,steel:0x687a65,accent:0xc8b77b},[
+    {x:0,y:4.2,z:0,w:12,h:.4,d:12,kind:'deck'},
+    ...[-1,1].flatMap(x=>[-1,1].map(z=>solid(x*5,z*5,1,1,4,'wall',0xc6c3aa))),
+    ...[-1,1].flatMap(s=>[
+      solid(s*18,s*19,13,2,2.3,'wall',0x70896c),solid(-s*24,s*11,2,14,2.3,'wall',0x70896c),
+      solid(s*16,s*5,2,8,2.3,'wall',0x829478),solid(s*4,s*22,3,3,.8,'plinth',0xb4b29c),
+      solid(s*27,-s*20,3,3,1,'plinth',0xb4b29c),
+    ]),solid(0,0,3,3,1,'plinth',0xb4b29c),
+  ]);
+const vault=arena('vault','Vault','Covered bunker with an open outer route',80,
+  {sky:0xc3ccd6,ground:0x889398,fog:.004,sun:0xf0e8db,steel:0x5c6a75,accent:0xd5a85e},[
+    {x:0,y:5.6,z:0,w:46,h:.4,d:46,kind:'deck'},
+    ...[-1,1].flatMap(s=>[
+      ...[-1,1].map(x=>solid(x*15,s*22,13,1,5.4,'wall',0x919c9e)),
+      ...[-1,1].map(z=>solid(s*22,z*15,1,13,5.4,'wall',0x919c9e)),
+      solid(s*10,s*4,1.5,14,4,'wall',0x76838c),solid(-s*7,s*13,8,1.5,4,'wall',0x76838c),
+      solid(s*16,-s*9,3,3,2,'generator'),solid(s*3,s*27,4,1,1.3,'barrier'),
+    ]),solid(0,0,3,3,1.5,'crate'),
+  ]);
+const terminal=arena('terminal','Terminal','Loading bays on a covered concourse',88,
+  {sky:0xc4d0d4,ground:0xa0a9a7,fog:.004,sun:0xffe9c8,steel:0x60737a,accent:0xccab63},[
+    {x:0,y:5.2,z:0,w:12,h:.4,d:50,kind:'deck'},
+    ...[-1,1].flatMap(s=>[
+      ...[-1,1].map(z=>solid(s*5,z*21,1,1,5,'wall',0xb9c0b7)),
+      solid(s*19,s*19,12,5,4,'wall',0xaeb9b2),solid(s*22,-s*7,5,12,3,'container',0x547d8c),
+      solid(s*29,-s*23,6,3,2,'generator'),solid(s*12,s*5,3,3,1.4,'crate'),
+      solid(s*2,s*11,2,4,1.2,'barrier'),
+    ]),solid(0,0,3,3,2,'console',0x67858b),
+  ]);
+const switchback=arena('switchback','Switchback','Staggered walls with fast diagonal routes',80,
+  {sky:0xc6c1b7,ground:0xaca68f,fog:.004,sun:0xffe3b9,steel:0x716e5e,accent:0xc59c58},[
+    ...[-1,1].flatMap(s=>[
+      solid(s*6,s*19,20,2,4,'wall',0xa89e87),solid(-s*6,s*8,20,2,3.4,'wall',0xb9ad91),
+      solid(s*26,s*4,3,14,3,'wall',0x958d7c),solid(-s*26,s*23,4,4,2,'crate'),
+      solid(s*3,s*27,3,1,1.3,'barrier'),
+    ]),solid(0,0,2,2,1.3,'crate'),
+  ]);
+
+export const MAPS: readonly MapDefinition[] = [yard,foundry,relay,bazaar,harbor,citadel,junction,oasis,overpass,canal,crossfire,hangar,quarry,outpost,gardens,vault,terminal,switchback];
 // Every arena needs at least sixteen separated FFA starts for a full deployment.
 for(const map of MAPS) {
   const candidates=[...map.teamSpawns.red,...map.teamSpawns.blue];

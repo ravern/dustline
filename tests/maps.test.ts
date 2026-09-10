@@ -12,8 +12,8 @@ function openAt(map:MapDefinition,p:Vec3,height=1.75){
     p.y+height>b.y-b.h/2&&p.y<b.y+b.h/2);
 }
 
-test('all nine arenas expose complete spawn sets and the legacy Yard aliases',()=>{
-  assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay','bazaar','harbor','citadel','junction','oasis','overpass']);
+test('all eighteen arenas expose complete spawn sets and the legacy Yard aliases',()=>{
+  assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay','bazaar','harbor','citadel','junction','oasis','overpass','canal','crossfire','hangar','quarry','outpost','gardens','vault','terminal','switchback']);
   assert.equal(getMap('yard').boxes,MAP_BOXES);assert.equal(getMap('yard').spawns,SPAWNS);assert.equal(getMap('yard').size,MAP_SIZE);
   for(const map of MAPS){
     assert.ok(map.spawns.length>=16);

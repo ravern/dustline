@@ -42,7 +42,7 @@ try{
   await b.page.locator('#settings-button').click();await b.page.locator('#keybind-settings summary').click();
   assert.equal(await b.page.locator('[data-bind="forward"]').textContent(),'W');await b.page.locator('#settings-done').click();
   await a.page.locator('#callsign').fill('CONTROL TEST');await a.page.locator('#create-lobby').click();await wait(a.page,()=>!!window.__dustline.state.room);
-  await a.page.locator('#bot-count').selectOption('0');await wait(a.page,()=>window.__dustline.state.room.bots===0);
+  await a.page.locator('#bot-count').selectOption('1');await wait(a.page,()=>window.__dustline.state.room.bots===1);
   await a.page.locator('#start-match').click();await wait(a.page,()=>window.__dustline.state.locked&&window.__dustline.state.self);
   const before=(await state(a.page)).body;
   await a.page.keyboard.down('i');await a.page.waitForTimeout(250);await a.page.keyboard.up('i');
@@ -103,11 +103,11 @@ try{
   await wait(a.page,()=>window.__dustline.state.phase==='menu'&&!window.__dustline.state.room);await a.page.waitForTimeout(450);
   assert.equal((await state(a.page)).phase,'menu');assert.equal((await state(a.page)).room,undefined);
  });
- await check('All six new arenas render full FFA matches with 16 players',async()=>{
+ await check('All fifteen new arenas render full FFA matches with 16 players',async()=>{
   const maps=[];
-  for(const map of ['bazaar','harbor','citadel','junction','oasis','overpass']){
+  for(const map of ['bazaar','harbor','citadel','junction','oasis','overpass','canal','crossfire','hangar','quarry','outpost','gardens','vault','terminal','switchback']){
    await a.page.locator('#create-lobby').click();await wait(a.page,()=>!!window.__dustline.state.room);
-   assert.equal(await a.page.locator('#map-select option').count(),9);
+   assert.equal(await a.page.locator('#map-select option').count(),18);
    await a.page.locator('#map-select').selectOption(map);await wait(a.page,id=>window.__dustline.state.room.map===id,map);
    await a.page.locator('#bot-count').selectOption('15');await wait(a.page,()=>window.__dustline.state.room.bots===15);
    await a.page.locator('#start-match').click();await wait(a.page,id=>window.__dustline.state.map===id&&window.__dustline.state.phase==='playing',map);

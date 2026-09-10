@@ -1,6 +1,6 @@
 # Dustline
 
-A browser FPS with nine arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
+A browser FPS with eighteen arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
 
 | Mode | Players | Win condition |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ A browser FPS with nine arenas, three game modes, quickscoping, bots, and an aut
 | Team Deathmatch | Up to 16, 8 per team | Combined team eliminations |
 | Capture the Flag | Up to 16, 8 per team | Bring the enemy flag to your home flag |
 
-The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Bazaar adds market alleys. Harbor has cargo lanes. Citadel has a stone court and raised galleries. Junction has rail lanes and crossing routes. Oasis has desert ruins. Overpass has a bridge and covered ground routes. These are original layouts. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
+The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Bazaar adds market alleys. Harbor has cargo lanes. Citadel has a stone court and raised galleries. Junction has rail lanes and crossing routes. Oasis has desert ruins. Overpass has a bridge and covered ground routes. Canal has parallel banks and crossings. Crossfire has offset streets. Hangar has twin covered halls. Quarry has stone terraces. Outpost has four compounds. Gardens has a central pavilion. Vault has a covered bunker. Terminal has a covered concourse. Switchback has staggered walls and diagonal routes. These are original layouts. Decorative dunes have been removed from the arena walls so players cannot hide inside them. Exterior props remain outside the playable area. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
 
 ## Play locally
 
