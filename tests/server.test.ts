@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GameServer, rayBox } from '../server/game.ts';
+import { GameServer, rayBox, RECONNECT_GRACE } from '../server/game.ts';
 import { spawnBody, DT } from '../shared/physics.ts';
 import { MAP_BOXES } from '../shared/map.ts';
 import { WEAPONS, weaponForSlot } from '../shared/weapons.ts';
@@ -34,7 +34,7 @@ test('lobbies require ready players, host authority and explicit loadouts', () =
   game.receive('a', { type: 'loadout', loadout: loadout() }, 100); assert.equal(room.players.get('a')!.loadout.primary, 'scar');
 });
 test('host disconnect transfers ownership; empty rooms are removed', () => {
-  const { game, room } = setup(); game.disconnect('a'); assert.equal(room.host, 'b'); assert.equal(room.members.get('b')!.ready, true); game.disconnect('b'); assert.equal(game.rooms.size, 0);
+  const { game, room } = setup(); game.disconnect('a', 1000); assert.equal(room.host, 'b'); assert.equal(room.members.get('b')!.ready, true); game.disconnect('b', 1000); assert.equal(game.rooms.size, 1); game.tick(1000 + RECONNECT_GRACE); assert.equal(game.rooms.size, 0);
 });
 test('Intervention kills with one torso hit, respects bolt timing and reports a quickscope', () => {
   const { room, shooter, target } = setup(); shooter.adsSince = 999.8;
@@ -97,8 +97,8 @@ test('commands sent while dead are acknowledged without replaying stale movement
 });
 test('a late human replaces a bot in a full live match and inherits the requested loadout', () => {
   const game = new GameServer(); game.connect(() => {}, 'a'); game.connect(() => {}, 'b');
-  game.receive('a', { type: 'create', name: 'Alpha', loadout: loadout(), bots: 5 }, 1000); game.receive('a', { type: 'start' }, 1000);
-  const room = game.peers.get('a')!.room!; assert.equal(room.players.size, 6);
+  game.receive('a', { type: 'create', name: 'Alpha', loadout: loadout(), bots: 7 }, 1000); game.receive('a', { type: 'start' }, 1000);
+  const room = game.peers.get('a')!.room!; assert.equal(room.players.size, 8);
   game.receive('b', { type: 'join', code: room.code, name: 'Bravo', loadout: loadout('scar') }, 1002);
-  assert.equal(room.players.size, 6); assert.equal([...room.players.values()].filter(p => p.bot).length, 4); assert.equal(room.players.get('b')!.ammo[0], 20); assert.equal(room.players.get('b')!.loadout.primary, 'scar');
+  assert.equal(room.players.size, 8); assert.equal([...room.players.values()].filter(p => p.bot).length, 6); assert.equal(room.players.get('b')!.ammo[0], 20); assert.equal(room.players.get('b')!.loadout.primary, 'scar');
 });

@@ -10,9 +10,9 @@ import { DT } from '../shared/physics.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const production = process.env.NODE_ENV === 'production';
 const game = new GameServer();
-const mime: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg' };
+const mime: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream' };
 const port = Number(process.env.PORT || 3000);
-const info = () => ({ lanUrls: Object.values(networkInterfaces()).flat().filter(a => a && a.family === 'IPv4' && !a.internal).map(a => `http://${a!.address}:${port}`) });
+const info = () => ({ lanUrls: production ? [] : Object.values(networkInterfaces()).flat().filter(a => a && a.family === 'IPv4' && !a.internal).map(a => `http://${a!.address}:${port}`) });
 const server = http.createServer();
 let closeDevServer: (() => Promise<void>) | undefined;
 if (production) {
@@ -42,14 +42,24 @@ if (production) {
   });
 }
 const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024, perMessageDeflate: false });
-server.on('upgrade', (request, socket, head) => { if (request.url?.split('?')[0] === '/ws') wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request)); });
+server.on('upgrade', (request, socket, head) => {
+  if (request.url?.split('?')[0] === '/ws') wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request));
+  else if (production) socket.destroy();
+});
+const serialized = new WeakMap<object, string>();
 wss.on('connection', ws => {
-  const peer = game.connect(message => { if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 256 * 1024) ws.send(JSON.stringify(message)); });
+  const peer = game.connect(message => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (ws.bufferedAmount >= 256 * 1024) { ws.close(4001, 'Connection congested'); return; }
+    let data = serialized.get(message);
+    if (!data) { data = JSON.stringify(message); serialized.set(message, data); }
+    ws.send(data);
+  }, undefined, clock(), () => ws.close(4000, 'Session resumed elsewhere'));
   let alive = true;
   ws.on('pong', () => { alive = true; });
   const heartbeat = setInterval(() => { if (!alive) return ws.terminate(); alive = false; ws.ping(); }, 15000);
-  ws.on('message', (data, binary) => { if (!binary) game.receive(peer.id, data.toString()); });
-  ws.on('close', () => { clearInterval(heartbeat); game.disconnect(peer.id); });
+  ws.on('message', (data, binary) => { if (!binary) game.receive(peer, data.toString()); });
+  ws.on('close', () => { clearInterval(heartbeat); game.disconnect(peer); });
   ws.on('error', () => ws.close());
 });
 let previous = performance.now(), accumulator = 0, simulationTime = clock();

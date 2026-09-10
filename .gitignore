@@ -3,3 +3,5 @@ dist/
 .dustline.pid
 .DS_Store
 test-results/
+*.blend1
+*.blend2

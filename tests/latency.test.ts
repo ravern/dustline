@@ -213,7 +213,10 @@ test('flooded input cannot consume more movement steps than elapsed server ticks
   assert.equal(idle.room.runtime.get(idle.shooter.id)!.commandCredit, MAX_COMMAND_CREDIT);
   idle.room.enqueue(idle.shooter.id, Array.from({ length: 12 }, (_, index) => command(index, { forward: 1 })), 101 + DT);
   idle.room.tick(101 + DT);
-  assert.equal(idle.shooter.ack + 1, MAX_COMMAND_CREDIT, 'idle time cannot bank an unlimited movement burst');
+  assert.equal(idle.shooter.ack, 11, 'the obsolete movement prefix is acknowledged when a long gap recovers');
+  // Discarded commands advance the acknowledgement, never the movement budget.
+  assert.equal(idle.room.runtime.get(idle.shooter.id)!.commandCredit, 0);
+  assert.equal(idle.room.runtime.get(idle.shooter.id)!.queue.length, 0);
   idle.room.createPlayer(idle.shooter.id, false, 102);
   assert.equal(idle.room.runtime.get(idle.shooter.id)!.commandCredit, 0, 'a new life starts with no saved credit');
 });
@@ -251,4 +254,30 @@ test('catchup preserves fire edges without accelerating fire cooldowns, healing 
   assert.ok(Math.abs(shooter.hp - (50 + 25 * DT)) < 1e-9, 'health advances once per server tick');
   assert.equal(room.runtime.get(shooter.id)!.history.length, historyBefore + 1);
   assert.equal(room.runtime.get(shooter.id)!.fireHeld, false, 'the final release edge remains applied');
+});
+
+test('300 ms stalled delivery discards obsolete debt once and resumes current commands without speedup', () => {
+  const { room, shooter } = arena(), initial = { ...shooter.body };
+  for (let tick = 1; tick <= 18; tick++) room.tick(100 + tick * DT);
+  const delayed = Array.from({ length: 18 }, (_, seq) => command(seq, { time: 100 + (seq + 1) * DT, forward: 1 }));
+  room.enqueue(shooter.id, delayed.slice(0, 12), 100.31);
+  room.enqueue(shooter.id, delayed.slice(12), 100.31);
+  room.tick(100.32);
+  let expected = initial;
+  for (const input of delayed.slice(-MAX_COMMAND_CREDIT)) expected = move(expected, input);
+  assert.deepEqual(shooter.body, expected, 'recovery moves only the eight earned steps');
+  assert.equal(shooter.ack, 17); assert.equal(room.runtime.get(shooter.id)!.queue.length, 0);
+  for (let tick = 1; tick <= 40; tick++) {
+    const input = command(17 + tick, { time: 100.32 + tick * DT, forward: 1 });
+    room.enqueue(shooter.id, [input], 100.32 + tick * DT); room.tick(100.32 + tick * DT);
+    expected = move(expected, input); assert.deepEqual(shooter.body, expected); assert.equal(shooter.ack, 17 + tick);
+  }
+});
+
+test('a multi-second input backlog stays bounded and acknowledges the most recent command', () => {
+  const { room, shooter } = arena();
+  for (let tick = 1; tick <= 120; tick++) room.tick(100 + tick * DT);
+  for (let batch = 0; batch < 10; batch++) room.enqueue(shooter.id, Array.from({ length: 12 }, (_, i) => command(batch * 12 + i, { forward: 1 })), 102.01);
+  assert.equal(room.runtime.get(shooter.id)!.queue.length, 30);
+  room.tick(102.02); assert.equal(shooter.ack, 119); assert.equal(room.runtime.get(shooter.id)!.queue.length, 0);
 });

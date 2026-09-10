@@ -1,0 +1,26 @@
+{
+  "glove_right": {
+    "triangles": 1916,
+    "materials": 4
+  },
+  "glove_left": {
+    "triangles": 1916,
+    "materials": 4
+  },
+  "boot": {
+    "triangles": 1928,
+    "materials": 5
+  },
+  "crate": {
+    "triangles": 2244,
+    "materials": 6
+  },
+  "barrel": {
+    "triangles": 944,
+    "materials": 4
+  },
+  "barrier": {
+    "triangles": 784,
+    "materials": 4
+  }
+}

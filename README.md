@@ -1,45 +1,61 @@
 # Dustline
 
-A playable browser FPS for 2–6 operators, including bots. The Yard is an original compact desert scrapyard with stacked containers, cover lanes and a climbable central drilling rig. The pace and quickscoping take inspiration from classic multiplayer shooters; this is an arcade game with respawns.
+A browser FPS with three industrial arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
 
-## Launch locally
+| Mode | Players | Win condition |
+| --- | --- | --- |
+| Free for All | Up to 8 | Individual eliminations |
+| Team Deathmatch | Up to 16, 8 per team | Combined team eliminations |
+| Capture the Flag | Up to 16, 8 per team | Bring the enemy flag to your home flag |
 
-On macOS, double-click **Start Dustline.command**. It installs missing dependencies, starts the server in Terminal, and opens the browser once the server responds. Keep that Terminal window open. Stop with Control-C or **Stop Dustline.command**; the stop launcher only targets a process recorded by the start launcher.
+The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
 
-Alternatively, from this directory:
+## Play locally
+
+Requires Node.js 22.12+ (or Node 20.19+), WebGL, and a desktop mouse and keyboard.
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). Requires Node.js 22.12+ (or Node 20.19+) and a desktop browser with WebGL and a mouse. Chrome or Edge is recommended. No paid API keys or cloud services are needed. After dependencies are installed, gameplay runs locally.
+Open [localhost:3000](http://localhost:3000). On macOS, **Start Dustline.command** installs missing dependencies and starts the game; **Stop Dustline.command** stops that launcher's process.
 
-**Solo warm-up** immediately starts a match with three bots. To play together, select a primary in **Loadout**, create a lobby, and share its invite. Everyone except the host must ready up before deployment. The host controls bots, score limit and time limit. Players can join a running match; a human replaces a bot when all six slots are occupied. Every loadout includes the M9 and combat knife.
+Enter your own callsign; the game never assigns a default human name. Create a lobby, choose the map, mode, bots, score limit, and time limit, then share **Copy invite**. Guests ready up before the host starts. **Solo warm-up** starts an FFA match with three bots. Humans can replace bots in a full running match. Loadouts include a primary weapon, M9, and knife.
 
-For another computer on the same network, use the host's LAN address, for example `http://192.168.5.101:3000`, then enter the room code. **Copy invite** uses a LAN URL when possible. Available host addresses are listed by [/api/info](http://localhost:3000/api/info); addresses can change when the network changes. Allow the incoming local connection if macOS asks. Each browser tab is a separate operator.
+For LAN play, open the host computer's LAN address in another browser. Local development exposes available addresses through `/api/info`; production does not publish server interface addresses. Invite links use the current public origin when hosted.
 
 ## Controls
 
 | Action | Control |
 | --- | --- |
 | Move / look | WASD / mouse |
-| Sprint | Hold Shift while moving forward |
+| Sprint | Shift while moving forward |
 | Jump | Space |
-| Crouch / slide | Hold C or Control; press during a sprint to slide |
-| Fire / knife attack | Left mouse |
+| Crouch / slide | Hold C or Control; press while sprinting to slide |
+| Fire / knife | Left mouse |
 | Aim | Hold right mouse |
 | Reload | R |
 | Primary / M9 / knife | 1 / 2 / 3 |
-| Quick melee / swap weapon | V / Q |
+| Quick melee / swap | V / Q |
 | Scoreboard | Hold Tab |
-| Release mouse / resume menu | Escape |
+| Release mouse | Escape |
 
-The Intervention reaches aimed accuracy after **160 ms**, kills with one torso hit, holds five rounds and has a 950 ms bolt cycle. AK-47 and SCAR-H are automatic; the M9 is semiautomatic. Sprint is 9 m/s. The jump peaks near one metre and lands in about half a second. Slide momentum lasts about 650 ms. Health regenerates after five seconds without damage; respawns take 2.5 seconds.
+Crouch lowers the camera and collision body; standing requires overhead clearance. Sliding lowers the body further and shows your legs and boots. Remote players bend their hips and knees into these stances. The Intervention reaches aimed accuracy after 160 ms. Health regenerates after five seconds without damage and respawns take 2.5 seconds.
 
-Settings include sensitivity, field of view, volume, graphics and added network delay. The delay setting simulates 80, 160 or 250 ms of extra round-trip latency so you can feel the prediction and hit compensation.
+## Visual assets and performance
 
-## Build and check
+The original Blender kit contains modeled left/right tactical gloves, a boot, shipping crate, drum, and concrete barrier. The source is `art/dustline-kit.blend`; regenerate its approximately 400 KB glTF binary with Blender's `--background --python tools/build-assets.py`. The game loads the kit once and shares its geometry and materials. No third-party model downloads or paid asset services are required.
+
+Static scenery is batched by material; reused props are instanced. Player and weapon geometry is cached, decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows and lowers the render resolution. **High** uses directional shadows and richer lighting. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware.
+
+## Multiplayer
+
+Movement is predicted locally and reconciled against authoritative input acknowledgments. Other players render from a jitter-buffered snapshot timeline; server-side hitscan uses bounded historical hitboxes. Clock sampling uses monotonic local time and filters congested samples. Brief disconnects resume the same operator, team, loadout, and score within a 20-second grace period. Session tokens stay private to their socket and browser tab.
+
+**Added network delay** simulates 80, 160, or 250 ms of additional round-trip delay. It does not emulate packet loss. See [NETWORKING.md](NETWORKING.md) for transport limitations and verification details.
+
+## Build, test, and host
 
 ```sh
 npm test
@@ -47,12 +63,16 @@ npm run build
 npm start
 ```
 
-`npm start` serves the built client and WebSocket game server on port 3000. Set `PORT=3001` to use another port. If a restricted environment blocks the `tsx` CLI's temporary socket, run the tests with `node --import tsx --test tests/*.test.ts`.
+Production serves the built game and WebSocket server on port 3000; set `PORT` to use another port. The Dockerfile builds a production image and runs as a non-root user. Route HTTP and WebSocket upgrades to the same instance. `/health` reports readiness. Keep deployment hosts, SSH aliases, credentials, and private addresses in external configuration, never in this repository.
 
-With the server running, `npm run test:browser` runs the two-browser playtest (requires installed Google Chrome). It uses real keyboard and mouse input and writes screenshots plus results to `test-results/browser/`.
+Rooms and scores are in memory, so run one server instance. Restarting or redeploying ends existing matches and invalidates resume tokens. This game does not provide persistent accounts, cross-region matchmaking, or a UDP relay.
 
-The final verification passed **36 automated tests and 13 real-browser checks**, including a player-to-player quickscope elimination, replicated death and respawn, and movement under 160/250 ms added network delay. Saved evidence is in `test-results/browser/`.
+With the server running and Google Chrome installed:
 
-The automated suite covers collision, jumping, sprinting, sliding, both rig staircases, lobby permissions, loadouts, gunplay, reloads, respawns, bots, late joining and latency/reconciliation. [NETWORKING.md](NETWORKING.md) describes the implementation and research.
+```sh
+npm run test:browser
+npm run test:modes-browser
+npm run test:multiplayer
+```
 
-This is a local/LAN game, not an internet matchmaking service. Rooms and scores live in memory and disappear when the server stops. There are no accounts, persistent progression, dedicated hosting, NAT traversal or relay service. WebSocket connections go directly to this server; a room code alone cannot reach it from outside your network. Disconnecting creates a new operator when you reconnect. Bots provide moving, shooting practice opponents with simple steering.
+The automated tests cover movement, map traversal, capacity, teams, CTF objectives, weapons, latency, input validation, and reconnect sessions. Browser tests use real input for movement and combat and save evidence to ignored `test-results/`. If a restricted environment blocks the `tsx` CLI socket, run `node --import tsx --test tests/*.test.ts`.
