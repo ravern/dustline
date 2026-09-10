@@ -16,7 +16,7 @@ interface LightingProfile {
   cloudCoverage: number;
 }
 
-const PROFILES: Record<MapId, LightingProfile> = {
+const PROFILES: Record<'yard'|'foundry'|'relay', LightingProfile> & Partial<Record<MapId, LightingProfile>> = {
   yard: {
     sunDirection: [-.53, .72, .45], sunColor: 0xffe1b3, sunIntensity: 3.15,
     zenith: 0x547fa7, horizon: 0xd5c4a9, ground: 0x77664e,
@@ -122,7 +122,7 @@ export interface WorldLighting {
 }
 
 export function createWorldLighting(scene: THREE.Scene, map: MapDefinition): WorldLighting {
-  const profile = PROFILES[map.id];
+  const profile:LightingProfile = PROFILES[map.id] ?? {...PROFILES.yard, sunColor:map.theme.sun, horizon:map.theme.sky, ground:map.theme.ground, fogColor:map.theme.sky, fogDensity:map.theme.fog};
   const sunDirection = new THREE.Vector3(...profile.sunDirection).normalize();
   const environment = skyPanorama(profile, sunDirection);
   scene.background = environment;

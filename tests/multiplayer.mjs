@@ -23,7 +23,7 @@ async function connect() {
   await until(() => client.token, 'welcome'); return client;
 }
 const results = [];
-for (const [mode, map, count] of [['ffa', 'yard', 8], ['tdm', 'foundry', 16], ['ctf', 'relay', 16]]) {
+for (const [mode, map, count] of [['ffa', 'bazaar', 32], ['tdm', 'overpass', 32], ['ctf', 'citadel', 32]]) {
   const clients = [];
   try {
     const host = await connect(); clients.push(host);
@@ -39,7 +39,7 @@ for (const [mode, map, count] of [['ffa', 'yard', 8], ['tdm', 'foundry', 16], ['
     host.send({ type: 'start' });
     await Promise.all(clients.map(c => until(() => c.snapshot?.state === 'playing', 'deployment')));
     assert.equal(host.snapshot.players.length, count); assert.equal(host.snapshot.mode, mode); assert.equal(host.snapshot.map, map);
-    if (mode !== 'ffa') for (const team of ['red', 'blue']) assert.equal(host.snapshot.players.filter(p => p.team === team).length, 8);
+    if (mode !== 'ffa') for (const team of ['red', 'blue']) assert.equal(host.snapshot.players.filter(p => p.team === team).length, 16);
     const extra = await connect();
     extra.send({ type: 'join', code: room.code, name: 'Overflow', loadout });
     await until(() => extra.messages.some(m => m.type === 'error'), 'capacity rejection'); extra.socket.close();

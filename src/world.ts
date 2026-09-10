@@ -323,7 +323,7 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
  box(yellow,-10.5,6.48,8.6,7.2,.17,.22);
  cylinder(steel,-10.5,6.15,8.6,.24,7.5,'x');
  } else if(map.id==='foundry') foundryLandmarks();
- else relayLandmarks();
+ else {switch(map.id){case 'relay':relayLandmarks();break;default:sign(map.name.toUpperCase(),'#394c4d','#e2ddc7',0,2.2,-map.size/2+.04,9,1.2);}}
  arenaSurface();
  // Exterior industry, terrain, and distant mountain ridges close the horizon.
  // Connected, irregular ridges and worn plateaus avoid repeated cone silhouettes.
@@ -362,16 +362,14 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
   for(let j=0;j<n;j++)indices.push(center,3*n+(j+1)%n,3*n+j);
   terrain(positions,indices,colors);
  }
- for(let i=0;i<16;i++) {
-  const a=i/16*Math.PI*2,r=42+rand()*15;
-  const dune=mesh(new THREE.SphereGeometry(1,12,6),sand,Math.cos(a)*r,-2,Math.sin(a)*r);dune.scale.set(11+rand()*8,3+rand()*4,9+rand()*10);dune.castShadow=false;
- }
- for(const [x,z] of [[-43,-22],[-48,-35],[42,27],[45,39]]) {
+ for(const [offset,z] of [[-43,-22],[-48,-35],[42,27],[45,39]]) {
+  const x=Math.sign(offset)*(map.size/2+10+Math.abs(offset)-42);
   cylinder(ivory,x,5,z,5,10);cylinder(steel,x,10.06,z,5.06,.17);
   cylinder(rust,x,11,z,1.04,1.85);
   for(const s of [-1,1])box(steel,x+s*5.03,6,z,.13,8,.13);
  }
- for(const [x,z] of [[43,-39],[-41,36]]) {
+ for(const [offset,z] of [[43,-39],[-41,36]]) {
+  const x=Math.sign(offset)*(map.size/2+10);
   for(const sx of [-1,1])for(const sz of [-1,1])beam(rust,new THREE.Vector3(x+sx*3,0,z+sz*3),new THREE.Vector3(x+sx*.8,23,z+sz*.8),.24);
   for(let y=5;y<=23;y+=4.5){const r=3-y*.095;for(const s of [-1,1]){box(steel,x+s*r,y,z,.16,.15,r*2);box(steel,x,y,z+s*r,r*2,.15,.16);}}
   box(dark,x,24,z,2.1,.7,2.1);cylinder(rust,x,28,z,.17,8);
@@ -385,10 +383,10 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
  for(const [x,z] of [[-24,-25],[25,-15],[25,23],[-23,23],[-26,4],[5,-26]]) {
   for(let i=0;i<4;i++)beam(dustMat,new THREE.Vector3(x,0,z),new THREE.Vector3(x+(rand()-.5)*.65,.3+rand()*.35,z+(rand()-.5)*.65),.017);
  }
- // A windblown flag adds a small moving landmark near the tower.
+ // Mount the decorative banner on the perimeter wall in every arena.
  const flagGeo=new THREE.PlaneGeometry(1.55,.8,12,5);geos.push(flagGeo);
  const flagMat=mat(0xd1b361,1,0);flagMat.side=THREE.DoubleSide;
- const flag=new THREE.Mesh(flagGeo,flagMat);flag.position.set(map.id==='yard'?4.12:1.72,map.id==='yard'?8.6:12.2,2.7);flag.rotation.y=.12;root.add(flag);box(steel,map.id==='yard'?3.36:.96,map.id==='yard'?7.92:11.52,2.7,.054,3.25,.054);
+ const flag=new THREE.Mesh(flagGeo,flagMat);flag.position.set(1.7,4.8,-map.size/2-.1);flag.rotation.y=.12;root.add(flag);box(steel,.94,4.12,-map.size/2-.1,.054,3.25,.054);
  const originalFlag=new Float32Array(flagGeo.attributes.position.array as Float32Array);
  // Fine drifting particles use one draw call and remain deliberately subtle.
  const dustGeo=new THREE.BufferGeometry();geos.push(dustGeo);const dustCount=105;const dustPositions=new Float32Array(dustCount*3);

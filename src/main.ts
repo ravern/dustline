@@ -9,6 +9,7 @@ import '@fontsource/barlow-condensed/700.css';
 import '@fontsource/barlow-condensed/800.css';
 import './style.css';
 import * as THREE from 'three';
+import { ACTIONS, CONTROLS, actionForCode, bindingError, controlLabel, defaultBindings, held, normalizeCode, readBindings, type Action } from './controls';
 import { Network } from './network';
 import { AudioEngine } from './audio';
 import { GameView } from './renderer';
@@ -24,7 +25,9 @@ const audio=new AudioEngine();
 const net=new Network();
 let view:GameView;
 try {view=new GameView($<HTMLCanvasElement>('game-canvas'));} catch(error) {$('loading').classList.add('hidden');$('webgl-error').classList.remove('hidden');throw error;}
-let saved:Record<string,unknown>={};try{saved=JSON.parse(localStorage.getItem('dustline-settings')||'{}');}catch{}
+let saved:Record<string,unknown>={};try{saved=JSON.parse(localStorage.getItem('dustline-settings')||'{}')??{};}catch{}
+let bindings=readBindings(saved?.bindings);
+let captureBinding:Action|undefined;
 let loadout:Loadout={primary:['intervention','ak47','scar'].includes(String(saved.primary))?saved.primary as PrimaryId:'intervention',secondary:'m9'};
 let draftLoadout:Loadout={...loadout};
 let room:RoomInfo|undefined;
@@ -66,7 +69,7 @@ $<HTMLInputElement>('callsign').value=saved.callsignExplicit===true?String(saved
 function requireCallsign(){if(cleanCallsign())return true;toast('Enter your callsign before joining the fight.');$<HTMLInputElement>('callsign').focus();return false;}
 view.sensitivity=Number(saved.sensitivity)||1;view.fov=Number(saved.fov)||82;audio.setVolume(saved.volume===undefined?.45:Number(saved.volume));
 if(saved.quality==='low')view.setQuality('low');
-const save=()=>localStorage.setItem('dustline-settings',JSON.stringify({primary:loadout.primary,callsign:cleanCallsign(),callsignExplicit:!!cleanCallsign(),sensitivity:view.sensitivity,fov:view.fov,volume:audio.volume,quality:view.quality}));
+const save=()=>localStorage.setItem('dustline-settings',JSON.stringify({primary:loadout.primary,callsign:cleanCallsign(),callsignExplicit:!!cleanCallsign(),sensitivity:view.sensitivity,fov:view.fov,volume:audio.volume,quality:view.quality,bindings}));
 function toast(message:string){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3500);}
 function showMenuPage(next:typeof page){
   if(phase!=='menu')return;
@@ -79,7 +82,7 @@ function showMenuPage(next:typeof page){
   document.querySelectorAll<HTMLElement>('[data-nav]').forEach(b=>b.classList.toggle('active',b.dataset.nav===next));
   if(next==='loadout'){draftLoadout={...loadout};paintLoadout(draftLoadout);view.preview(draftLoadout.primary,$<HTMLCanvasElement>('weapon-preview'));previewReady=true;}
 }
-function resetControls(){keys.clear();fire=false;ads=false;lastFire=false;localMeleeUntil=0;}
+function resetControls(){keys.clear();fire=false;ads=false;lastFire=false;localMeleeUntil=0;tabHeld=false;syncOverlays();}
 function requestLock(){
   audio.unlock();
   if(!net.connected){toast('Reconnecting to the server…');return;}
@@ -97,7 +100,7 @@ function syncOverlays(){
 }
 function leaveRoom(){net.send({type:'leave'});}
 function openSettings(){settingsOpen=true;if(document.pointerLockElement)document.exitPointerLock();$('settings').classList.remove('hidden');syncOverlays();}
-function closeSettings(){settingsOpen=false;$('settings').classList.add('hidden');syncOverlays();save();}
+function closeSettings(){captureBinding=undefined;paintBindings();resetControls();settingsOpen=false;$('settings').classList.add('hidden');syncOverlays();save();}
 function selectWeapon(id:PrimaryId){draftLoadout={primary:id,secondary:'m9'};paintLoadout(draftLoadout);$('active-primary').textContent=WEAPONS[loadout.primary].shortName;view.preview(id,$<HTMLCanvasElement>('weapon-preview'));audio.click();}
 function applyLoadout(){loadout={...draftLoadout};paintLoadout(loadout);save();if(room)net.send({type:'loadout',loadout});showMenuPage('play');toast(`${WEAPONS[loadout.primary].name} equipped. M9 and knife ready.`);}
 function create(practice:boolean){if(!requireCallsign())return;if(!net.connected){toast('Connecting to the server…');return;}save();autoStart=practice;loading=true;net.send({type:'create',name:cleanCallsign(),loadout,bots:3,private:practice});if(practice)requestLock();}
@@ -124,6 +127,7 @@ $('return-lobby').onclick=()=>net.send({type:'return'});
 }));
 $('copy-invite').onclick=async()=>{if(!room)return;const origin=(location.hostname==='localhost'||location.hostname==='127.0.0.1')&&lanUrl?lanUrl:location.origin;try{await navigator.clipboard.writeText(`${origin}/?room=${room.code}`);toast(`Invite copied. Room ${room.code}.`);}catch{toast(`Room code: ${room.code}. Join from another browser on this server.`);}};
 $('resume').onclick=requestLock;$('game-canvas').onclick=()=>{if(phase==='playing'&&!document.pointerLockElement&&!settingsOpen)requestLock();};
+$('manual-settings').onclick=()=>{openSettings();$<HTMLDetailsElement>('keybind-settings').open=true;$('keybind-settings').scrollIntoView();};
 $('settings-button').onclick=openSettings;$('pause-settings').onclick=openSettings;$('close-settings').onclick=closeSettings;$('settings-done').onclick=closeSettings;
 function refreshSettings(){
   $<HTMLInputElement>('sensitivity').value=String(view.sensitivity);$('sensitivity-value').textContent=view.sensitivity.toFixed(1);
@@ -144,24 +148,71 @@ document.addEventListener('pointerlockchange',()=>{resetControls();syncOverlays(
 document.addEventListener('pointerlockerror',()=>{if(phase==='playing')syncOverlays();});
 addEventListener('blur',resetControls);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)resetControls();});
-addEventListener('contextmenu',e=>{if(phase==='playing')e.preventDefault();});
+for(const event of ['contextmenu','auxclick'])addEventListener(event,e=>{switch(phase==='playing'||settingsOpen){case true:e.preventDefault();}});
 addEventListener('mousemove',e=>{if(!document.pointerLockElement||phase!=='playing'||self?.hp===0)return;const factor=.0021*view.sensitivity*(view.ads>.5?(slot===0&&loadout.primary==='intervention'?.25:.72):1);yaw-=e.movementX*factor;pitch=THREE.MathUtils.clamp(pitch-e.movementY*factor,-1.45,1.45);});
-addEventListener('mousedown',e=>{if(!document.pointerLockElement||phase!=='playing')return;if(e.button===0)fire=true;if(e.button===2)ads=true;audio.unlock();});
-addEventListener('mouseup',e=>{if(e.button===0)fire=false;if(e.button===2)ads=false;});
-addEventListener('keydown',e=>{
-  if((e.target as HTMLElement).matches('input,select,textarea'))return;
-  if(phase!=='playing')return;
-  if(e.code==='Escape'&&document.pointerLockElement){document.exitPointerLock();return;}
-  if(['Space','Tab','ControlLeft','ControlRight','ShiftLeft','ShiftRight','KeyW','KeyA','KeyS','KeyD'].includes(e.code))e.preventDefault();
-  if(e.code==='Tab'){tabHeld=true;syncOverlays();}
-  if(!document.pointerLockElement)return;
-  keys.add(e.code);
-  if(e.repeat)return;
-  let next:Slot|undefined;if(e.code==='Digit1')next=0;if(e.code==='Digit2')next=1;if(e.code==='Digit3')next=2;if(e.code==='KeyQ')next=slot===0?1:0;
-  if(next!==undefined){slot=next;ads=false;fire=false;lastFire=false;localMeleeUntil=0;predictedReload=undefined;nextLocalShot=net.now()+.2;audio.click();}
-  if(e.code==='KeyV'&&!localMeleeUntil){restoreSlot=slot;slot=2;ads=false;fire=false;lastFire=false;predictedReload=undefined;localMeleeUntil=net.now()+.7;nextLocalShot=net.now()+.2;}
+function paintBindings(){
+  $('keybind-list').innerHTML=ACTIONS.map(action=>`<div class="binding-row"><span>${CONTROLS[action].label}</span><button type="button" data-bind="${action}" aria-label="Change ${CONTROLS[action].label}" aria-pressed="${captureBinding===action}">${captureBinding===action?'Press a key or mouse button…':bindings[action].map(controlLabel).join(' / ')}</button></div>`).join('');
+  document.querySelectorAll<HTMLElement>('[data-control]').forEach(element=>{element.textContent=bindings[element.dataset.control as Action].map(controlLabel).join(' / ');});
+}
+$('keybind-list').addEventListener('click',event=>{
+  const button=(event.target as HTMLElement).closest<HTMLElement>('[data-bind]');
+  switch(!!button){case false:return;}
+  captureBinding=button!.dataset.bind as Action;paintBindings();
+  $('binding-status').textContent='Press a key or mouse button. Press Escape to cancel. Used controls must be changed first.';
 });
-addEventListener('keyup',e=>{keys.delete(e.code);if(e.code==='Tab'){tabHeld=false;syncOverlays();}});
+$('reset-bindings').onclick=()=>{bindings=defaultBindings();captureBinding=undefined;resetControls();paintBindings();save();$('binding-status').textContent='Default controls restored.';};
+function captureControl(event:KeyboardEvent|MouseEvent){
+  switch(captureBinding){case undefined:return;}
+  event.preventDefault();event.stopImmediatePropagation();
+  const code=normalizeCode(event instanceof KeyboardEvent?event.code:`Mouse${event.button}`);
+  switch(code){case 'Escape':captureBinding=undefined;paintBindings();$('binding-status').textContent='No change made.';return;}
+  const error=bindingError(bindings,captureBinding,code);
+  switch(!!error){case true:$('binding-status').textContent=error;return;}
+  bindings[captureBinding]=[code];captureBinding=undefined;resetControls();paintBindings();save();
+  $('binding-status').textContent='Control saved in this browser.';
+}
+addEventListener('keydown',captureControl,true);
+addEventListener('mousedown',captureControl,true);
+// Suppress the click after a captured mouse button so it cannot start another edit.
+$('keybind-list').addEventListener('mousedown',event=>event.preventDefault());
+function pressControl(code:string,repeat=false){
+  switch(phase!=='playing'||settingsOpen){case true:return;}
+  const action=actionForCode(bindings,code);
+  switch(action){
+    case 'scoreboard':keys.add(code);tabHeld=true;syncOverlays();return;
+    case 'pause':document.pointerLockElement&&document.exitPointerLock();return;
+  }
+  switch(!document.pointerLockElement){case true:return;}
+  keys.add(code);
+  switch(action){case 'fire':fire=true;break;case 'aim':ads=true;break;}
+  switch(repeat){case true:return;}
+  const slots:Partial<Record<Action,Slot>>={primary:0,secondary:1,knife:2,swap:slot===0?1:0};
+  const next=action&&slots[action];
+  switch(next){
+    case undefined:break;
+    default:slot=next;ads=false;fire=false;lastFire=false;localMeleeUntil=0;predictedReload=undefined;nextLocalShot=net.now()+.2;audio.click();
+  }
+  switch(action==='melee'&&!localMeleeUntil){
+    case true:restoreSlot=slot;slot=2;ads=false;fire=false;lastFire=false;predictedReload=undefined;localMeleeUntil=net.now()+.7;nextLocalShot=net.now()+.2;
+  }
+}
+function releaseControl(code:string){
+  keys.delete(code);
+  switch(actionForCode(bindings,code)){
+    case 'fire':fire=held(bindings,keys,'fire');break;
+    case 'aim':ads=held(bindings,keys,'aim');break;
+    case 'scoreboard':tabHeld=held(bindings,keys,'scoreboard');syncOverlays();break;
+  }
+}
+addEventListener('mousedown',event=>{switch(!!document.pointerLockElement){case true:event.preventDefault();audio.unlock();pressControl(`Mouse${event.button}`);}});
+addEventListener('mouseup',event=>releaseControl(`Mouse${event.button}`));
+addEventListener('keydown',event=>{
+  switch(settingsOpen||phase!=='playing'||(event.target as HTMLElement).matches('input,select,textarea')){case true:return;}
+  switch(!!actionForCode(bindings,event.code)){case true:event.preventDefault();}
+  pressControl(event.code,event.repeat);
+});
+addEventListener('keyup',event=>releaseControl(event.code));
+paintBindings();
 
 net.onStatus=connected=>{
   $('connection').classList.toggle('online',connected);$('connection').innerHTML=`<i></i>${connected?'SERVER ONLINE':'RECONNECTING'}`;
@@ -248,8 +299,8 @@ function fixedStep(){
   if(localMeleeUntil&&now>=localMeleeUntil){slot=restoreSlot;localMeleeUntil=0;}
   const firing=active&&(fire||(melee&&now>=localMeleeUntil-.43));
   const aiming=active&&ads&&slot!==2&&reloadUntil()<=now&&body.stance!=='slide';
-  const sprint=active&&(keys.has('ShiftLeft')||keys.has('ShiftRight'))&&!firing&&!aiming;
-  const input:Input={seq:seq++,yaw,pitch,forward:active?(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0):0,right:active?(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0):0,jump:active&&keys.has('Space'),sprint,crouch:active&&(keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight')),ads:aiming,fire:firing,reload:active&&keys.has('KeyR'),slot,time:now,viewTime:renderTime(),matchId:snapshot?.matchId};
+  const sprint=active&&held(bindings,keys,'sprint')&&!firing&&!aiming;
+  const input:Input={seq:seq++,yaw,pitch,forward:active?Number(held(bindings,keys,'forward'))-Number(held(bindings,keys,'backward')):0,right:active?Number(held(bindings,keys,'right'))-Number(held(bindings,keys,'left')):0,jump:active&&held(bindings,keys,'jump'),sprint,crouch:active&&held(bindings,keys,'crouch'),ads:aiming,fire:firing,reload:active&&held(bindings,keys,'reload'),slot,time:now,viewTime:renderTime(),matchId:snapshot?.matchId};
   if(self.hp>0){body=move(body,input,DT,activeMap());pending.push(input);if(pending.length>120){pending=pending.slice(-120);}}
   outgoing.push(input);
   if(outgoing.length>=2){net.send({type:'inputs',inputs:outgoing});outgoing=[];}
@@ -307,9 +358,9 @@ function updateHUD(time:number){
   [0,1,2].forEach(i=>$(`slot-${i}`).classList.toggle('selected',slot===i));
   $('scope').classList.toggle('hidden',!(weapon.id==='intervention'&&view.ads>=.999&&self.hp>0));
   $('crosshair').style.opacity=self.hp<=0?'0':String(1-view.ads);
-  $('crosshair').style.setProperty('--gap',`${7+(keys.has('ShiftLeft')?5:0)+(Math.hypot(body.vx,body.vz)>1?4:0)+view.kick*90}px`);
+  $('crosshair').style.setProperty('--gap',`${7+(held(bindings,keys,'sprint')?5:0)+(Math.hypot(body.vx,body.vz)>1?4:0)+view.kick*90}px`);
   const interrupted=performance.now()-lastSnapshotReceived>1800;
-  $('action-notice').textContent=interrupted?'CONNECTION INTERRUPTED':reloadUntil()>now?'RELOADING':weapon.id==='intervention'&&nextLocalShot>now+.2&&now-self.nextFire<1?'CYCLING BOLT':availableAmmo(slot)===0?'PRESS R TO RELOAD':'';
+  $('action-notice').textContent=interrupted?'CONNECTION INTERRUPTED':reloadUntil()>now?'RELOADING':weapon.id==='intervention'&&nextLocalShot>now+.2&&now-self.nextFire<1?'CYCLING BOLT':availableAmmo(slot)===0?`PRESS ${bindings.reload.map(controlLabel).join(' / ')} TO RELOAD`:'';
   $('hitmarker').style.opacity=time<hitUntil?'1':'0';$('kill-notice').style.opacity=time<noticeUntil?'1':'0';
   const hurt=Math.max(0,1-(time-lastDamageTime)*1.3);$('damage-vignette').style.opacity=String(Math.max(self.hp>0?(100-self.hp)/160:0,hurt*.8));
   feed=feed.filter(f=>f.until>time);$('killfeed').innerHTML=feed.map(f=>`<div class="feed-line">${f.text}</div>`).join('');
