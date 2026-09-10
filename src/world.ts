@@ -3,25 +3,15 @@ import { getMap, type MapDefinition } from '../shared/map';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Box } from '../shared/types';
 import { loadAssetKit } from './assets';
+import { createWorldLighting, type WorldLighting } from './lighting';
 
 export interface WorldPropSlot { kind: 'crate' | 'barrier' | 'barrel'; box: Box; root: THREE.Group }
 /** Static architecture is instanced/merged; only dust and a small flag animate. */
-export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{root:THREE.Group;map:MapDefinition;propSlots:WorldPropSlot[];update(time:number):void;dispose():void} {
+export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{root:THREE.Group;map:MapDefinition;propSlots:WorldPropSlot[];lighting:WorldLighting;update(time:number):void;dispose():void} {
  const propSlots:WorldPropSlot[]=[];let disposed=false;
  const root=new THREE.Group();root.name=`Dustline / ${map.name}`;scene.add(root);
- scene.background=new THREE.Color(map.theme.sky);scene.fog=new THREE.FogExp2(map.theme.sky,map.theme.fog);
- const hemi=new THREE.HemisphereLight(map.id==='yard'?0xf1f0e6:0xd8e9fa,map.id==='yard'?0x76664f:0x75848a,2.55);scene.add(hemi);
- const sun=new THREE.DirectionalLight(map.theme.sun,map.id==='foundry'?3:3.25);sun.position.set(-24,44,30);sun.castShadow=true;
- sun.shadow.mapSize.set(2048,2048);const shadowExtent=map.size*.7;sun.shadow.camera.left=-shadowExtent;sun.shadow.camera.right=shadowExtent;sun.shadow.camera.top=shadowExtent;sun.shadow.camera.bottom=-shadowExtent;
- sun.shadow.camera.near=1;sun.shadow.camera.far=130;sun.shadow.bias=-.00045;sun.shadow.normalBias=.035;scene.add(sun);
+ const lighting=createWorldLighting(scene,map);
  const mats:THREE.Material[]=[];const textures:THREE.Texture[]=[];const geos:THREE.BufferGeometry[]=[];
- // A tiny generated sky probe supplies broad reflections to metal in shade.
- // Three prefilters it once; this avoids black PBR surfaces without more lights.
- const skyCanvas=document.createElement('canvas');skyCanvas.width=256;skyCanvas.height=128;const skyContext=skyCanvas.getContext('2d')!;
- const skyGradient=skyContext.createLinearGradient(0,0,0,128);
- skyGradient.addColorStop(0,map.id==='yard'?'#f2dfba':'#c4dfef');skyGradient.addColorStop(.48,map.id==='yard'?'#d5cdb7':'#c7d6df');skyGradient.addColorStop(.56,map.id==='yard'?'#8c8774':'#71818a');skyGradient.addColorStop(1,map.id==='yard'?'#777364':'#667883');
- skyContext.fillStyle=skyGradient;skyContext.fillRect(0,0,256,128);
- const skyProbe=new THREE.CanvasTexture(skyCanvas);skyProbe.mapping=THREE.EquirectangularReflectionMapping;skyProbe.colorSpace=THREE.SRGBColorSpace;textures.push(skyProbe);scene.environment=skyProbe;scene.environmentIntensity=.55;
  const mat=(color:number,roughness=.83,metalness=.05,map?:THREE.Texture)=>{const m=new THREE.MeshStandardMaterial({color,roughness,metalness,...(map?{map}:{})});mats.push(m);return m;};
  let seed=map.id==='yard'?81723:map.id==='foundry'?17294:51637;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
  const texture=(kind:'sand'|'metal'|'concrete'|'wood')=>{
@@ -275,8 +265,10 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
   }
   // Equipment pads, footings, and warning edges anchor large masses visually.
   for(const b of map.boxes) {
-   if(!['generator','furnace','relay','station','container'].includes(b.kind)||b.y-b.h/2>.2)continue;
-   const shadow=mesh(new THREE.PlaneGeometry(b.w+2,b.d+2),contact,b.x,.025,b.z);shadow.rotation.x=-Math.PI/2;shadow.castShadow=false;
+   if(!['generator','furnace','relay','station','container','crate','barrier','barrel','tank'].includes(b.kind)||b.y-b.h/2>.2)continue;
+   const edge=['crate','barrier','barrel','tank'].includes(b.kind)?.65:1.5;
+   const shadow=mesh(new THREE.PlaneGeometry(b.w+edge,b.d+edge),contact,b.x,.025,b.z);shadow.rotation.x=-Math.PI/2;shadow.castShadow=false;
+   if(['crate','barrier','barrel','tank'].includes(b.kind))continue;
    box(concrete,b.x,-.003,b.z,b.w+.65,.04,b.d+.65);
    for(const s of [-1,1])box(paint,b.x+s*(b.w/2+.24),.019,b.z,.055,.022,b.d+.4);
   }
@@ -473,13 +465,13 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
   }
  }).catch(()=>{/* Procedural collision-sized fallbacks stay usable offline. */});
  let previous=0;
- return {root,map,propSlots,
+ return {root,map,propSlots,lighting,
   update(time:number){
    const dt=previous?Math.min(.05,time-previous):0;previous=time;
    const pos=flagGeo.attributes.position as THREE.BufferAttribute;
    for(let i=0;i<pos.count;i++){const x=originalFlag[i*3];pos.setZ(i,Math.sin(x*5-time*3.2+originalFlag[i*3+1]*2)*.1*(x+.78));}pos.needsUpdate=true;flagGeo.computeVertexNormals();
    for(let i=0;i<dustCount;i++){dustPositions[i*3]+=dt*(.22+(i%7)*.032);dustPositions[i*3+1]+=Math.sin(time*.8+i)*dt*.025;if(dustPositions[i*3]>map.size/2)dustPositions[i*3]=-map.size/2;}dustGeo.attributes.position.needsUpdate=true;
   },
-  dispose(){disposed=true;scene.remove(root,hemi,sun);if(scene.environment===skyProbe)scene.environment=null;root.traverse(node=>{if(node instanceof THREE.InstancedMesh)node.dispose();});for(const g of new Set(geos))g.dispose();for(const m of new Set(mats))m.dispose();for(const t of textures)t.dispose();sun.shadow.map?.dispose();}
+  dispose(){disposed=true;scene.remove(root);lighting.dispose();root.traverse(node=>{if(node instanceof THREE.InstancedMesh)node.dispose();});for(const g of new Set(geos))g.dispose();for(const m of new Set(mats))m.dispose();for(const t of textures)t.dispose();}
  };
 }

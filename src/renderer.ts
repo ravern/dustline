@@ -3,6 +3,9 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildWorld } from './world';
 import { buildLocalBody, buildSoldier, buildWeapon, loadModelKit, poseSoldier, releaseModel, setSoldierTeam } from './models';
 import { eyeHeight } from '../shared/physics';
+import { poseViewmodelArms } from './arms';
+import { createViewLighting } from './lighting';
+import { WEAPON_VIEW } from './weapon-assets';
 import { getMap, type MapId } from '../shared/map';
 import { WEAPONS, weaponForSlot } from '../shared/weapons';
 import type { Body, FlagState, PlayerState, Team, WeaponId, Vec3 } from '../shared/types';
@@ -12,7 +15,8 @@ export class GameView {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(82, 1, .035, 280);
   viewScene = new THREE.Scene();
-  viewCamera = new THREE.PerspectiveCamera(65, 1, .015, 20);
+  viewCamera = new THREE.PerspectiveCamera(72, 1, .015, 20);
+  viewLighting = createViewLighting(this.viewScene);
   previewScene = new THREE.Scene();
   previewCamera = new THREE.PerspectiveCamera(35, 1, .01, 20);
   previewRenderer?: THREE.WebGLRenderer;
@@ -53,14 +57,7 @@ export class GameView {
     this.renderer.toneMappingExposure = 1.04;
     this.world = buildWorld(this.scene);
     this.localBody.visible=false;this.scene.add(this.localBody);
-    const pmrem=new THREE.PMREMGenerator(this.renderer),studio=new RoomEnvironment();
-    const environment=pmrem.fromScene(studio,.04).texture;
-    this.viewScene.environment=environment;this.viewScene.environmentIntensity=.85;
-    studio.dispose();pmrem.dispose();
     this.camera.rotation.order = 'YXZ';
-    this.viewScene.add(new THREE.HemisphereLight(0xfff4df, 0x343c39, 1.8));
-    const sun = new THREE.DirectionalLight(0xffe2b8, 2.9); sun.position.set(-3, 5, 3); this.viewScene.add(sun);
-    const fill = new THREE.DirectionalLight(0x9ab7c8, 1.3); fill.position.set(3, 1, -3); this.viewScene.add(fill);
     this.viewScene.add(this.flash);
     const fm = new THREE.MeshBasicMaterial({color:0xffce70,transparent:true,opacity:.88,depthWrite:false,side:THREE.DoubleSide});
     for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(.095,.21), fm); m.rotation.z=i*Math.PI/3; this.flash.add(m); }
@@ -182,22 +179,22 @@ export class GameView {
       this.sway.y=THREE.MathUtils.damp(this.sway.y,THREE.MathUtils.clamp(pitch-this.lastPitch,-.04,.04),12,dt);this.lastYaw=yaw;this.lastPitch=pitch;
       if(this.gun){
         this.gun.visible=alive&&!(this.gunId==='intervention'&&this.ads>=.999);
-        const aimY=this.gunId==='intervention'?-.187:this.gunId==='ak47'?-.15:this.gunId==='scar'?-.177:-.105;
+        const aimY=-WEAPON_VIEW[this.gunId!].sight;
         const run=running?1:0,wave=Math.sin(this.movementPhase)*Math.min(.012,speed*.0017)*(1-this.slideBlend);
         const reload=Math.sin(reloading*Math.PI),hip=1-this.ads;
-        this.gun.position.set(THREE.MathUtils.lerp(.24,0,this.ads)+(wave-this.sway.x*.45)*hip,THREE.MathUtils.lerp(-.16,aimY,this.ads)-Math.abs(wave)*hip-reload*.13-this.weaponSwap*.35-this.slideBlend*.025,-.68+this.kick+reload*.11+this.weaponSwap*.14);
-        this.gun.rotation.set(this.kick*.75+run*.19+reload*.34+this.sway.y*.6+this.weaponSwap*.45,hip*.12-run*.28+reload*.16-this.sway.x*.5,run*-.16-reload*.56-this.slideBlend*.1);
-        const support=this.gun.getObjectByName('leftHand');
-        if(support){if(support.userData.restY===undefined){support.userData.restY=support.position.y;support.userData.restZ=support.position.z;support.userData.restRotation=support.rotation.x;}support.position.y=support.userData.restY-reload*.15;support.position.z=support.userData.restZ+reload*.17;support.rotation.x=support.userData.restRotation+reload*.7;}
+        this.gun.position.set(THREE.MathUtils.lerp(.20,0,this.ads)+(wave-this.sway.x*.45)*hip,THREE.MathUtils.lerp(-.205,aimY,this.ads)-Math.abs(wave)*hip-reload*.13-this.weaponSwap*.35-this.slideBlend*.025,THREE.MathUtils.lerp(-.60,-.36,this.ads)+this.kick+reload*.11+this.weaponSwap*.14);
+        this.gun.rotation.set(this.kick*.75+run*.19+reload*.34+this.sway.y*.6+this.weaponSwap*.45,hip*.22-run*.28+reload*.16-this.sway.x*.5,run*-.16-reload*.56-this.slideBlend*.1);
+        poseViewmodelArms(this.gun,reloading);
         if(this.gunId==='knife'&&this.kick>.005){this.gun.rotation.z-=this.kick*8;this.gun.position.z-=this.kick*2;}
       }
       this.flash.visible=alive&&this.gunId!=='knife'&&time<this.flashUntil&&this.ads<.9;
       this.flash.rotation.z=Math.random()*Math.PI;
-      if(this.gun){const muzzle=this.gunId==='m9'?-.20:this.gunId==='intervention'?-.98:this.gunId==='ak47'?-.735:-.7;this.flash.position.set(0,.05,muzzle).applyEuler(this.gun.rotation).add(this.gun.position);}
+      if(this.gun){const muzzle=WEAPON_VIEW[this.gunId!].muzzle;this.flash.position.set(...muzzle).applyEuler(this.gun.rotation).add(this.gun.position);}
     }else{
       this.camera.fov=53;this.camera.updateProjectionMatrix();
       const a=.66+Math.sin(time*.025)*.1;this.camera.position.set(Math.sin(a)*44,20+Math.sin(time*.1)*.5,Math.cos(a)*44);this.camera.lookAt(-3,4,0);this.flash.visible=false;
     }
+    this.viewLighting.update(this.world.lighting,this.camera,dt);
     this.renderer.autoClear=true;this.renderer.render(this.scene,this.camera);
     if(playing&&alive){this.renderer.autoClear=false;this.renderer.clearDepth();this.renderer.render(this.viewScene,this.viewCamera);this.renderer.autoClear=true;}
     if(showPreview&&this.previewModel&&this.previewRenderer){this.previewModel.rotation.y=-.85+Math.sin(time*.4)*.075;this.previewModel.rotation.z=-.08;this.previewRenderer.render(this.previewScene,this.previewCamera);}

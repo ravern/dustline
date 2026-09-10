@@ -1,0 +1,48 @@
+{
+  "scar": {
+    "right": {
+      "vertices": 2166,
+      "triangles": 4232
+    },
+    "left": {
+      "vertices": 2165,
+      "triangles": 4230
+    }
+  },
+  "ak47": {
+    "right": {
+      "vertices": 2166,
+      "triangles": 4232
+    },
+    "left": {
+      "vertices": 2165,
+      "triangles": 4230
+    }
+  },
+  "intervention": {
+    "right": {
+      "vertices": 2166,
+      "triangles": 4232
+    },
+    "left": {
+      "vertices": 2165,
+      "triangles": 4230
+    }
+  },
+  "m9": {
+    "right": {
+      "vertices": 2166,
+      "triangles": 4232
+    },
+    "left": {
+      "vertices": 2165,
+      "triangles": 4230
+    }
+  },
+  "knife": {
+    "right": {
+      "vertices": 2166,
+      "triangles": 4232
+    }
+  }
+}

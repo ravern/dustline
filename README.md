@@ -45,9 +45,11 @@ Crouch lowers the camera and collision body; standing requires overhead clearanc
 
 ## Visual assets and performance
 
-The original Blender kit contains modeled left/right tactical gloves, a boot, shipping crate, drum, and concrete barrier. The source is `art/dustline-kit.blend`; regenerate its approximately 400 KB glTF binary with Blender's `--background --python tools/build-assets.py`. The game loads the kit once and shares its geometry and materials. No third-party model downloads or paid asset services are required.
+First-person arms use a continuous anatomical surface, fitted tactical gloves, and a six-bone rig that keeps the shoulders anchored during reloads. Weapon models include textured AK-family and M9 meshes, a textured bayonet, and original Blender-authored SCAR and Intervention models. The game shares geometry, uses 1K weapon textures, and keeps simpler weapons on distant players. Source files and rebuild scripts are in `art/` and `tools/`; see [weapon credits and rebuild instructions](public/models/weapons/SOURCES.md) and [arm provenance](art/arms/README.md).
 
-Static scenery is batched by material; reused props are instanced. Player and weapon geometry is cached, decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows and lowers the render resolution. **High** uses directional shadows and richer lighting. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware.
+The original prop kit contains boots, crates, drums, and concrete barriers. Regenerate `art/dustline-kit.blend` and its approximately 400 KB game export with Blender's `--background --python tools/build-assets.py`. The included game assets run without additional downloads from asset services.
+
+Static scenery is batched by material; reused props are instanced. Player and weapon geometry is cached, decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows and lowers the render resolution. **High** uses directional shadows and weapon self shadows. Each map has a matching sky and reflection environment; turning and entering cover change the lighting on the weapon and arms. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware.
 
 ## Multiplayer
 

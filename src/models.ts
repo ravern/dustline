@@ -3,6 +3,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { applySurfaceDetail, cloneKitModel, loadAssetKit } from './assets';
+import { attachViewmodelArms, loadViewmodelArms, releaseViewmodelArms } from './arms';
+import { attachWeaponAsset, loadWeaponAssets, releaseWeaponAsset } from './weapon-assets';
 import type { Body, Team, WeaponId } from '../shared/types';
 
 const steel = new THREE.MeshStandardMaterial({color:0x282b2b,metalness:.82,roughness:.32});
@@ -76,13 +78,6 @@ function tacticalHand(side:'left'|'right'):THREE.Group {
  g.userData.kitPart='glove_'+side; kitTargets.add(g);replaceKitPart(g);
  return g;
 }
-function hands(g:THREE.Group,id:WeaponId) {
- const right=tacticalHand('right');right.position.set(.018,-.16,.126);right.rotation.set(1.23,.08,-1.38);g.add(right);
- if(id==='knife'){right.position.set(.027,-.092,.19);right.rotation.set(.3,.1,-.08);}
- else if(id!=='m9') {const left=tacticalHand('left');left.position.set(-.07,-.09,id==='intervention'?-.34:-.29);left.rotation.set(-.08,-.24,-1.12);g.add(left);}
- else {const left=tacticalHand('left');left.position.set(-.047,-.198,.115);left.rotation.set(.92,-.28,.35);g.add(left);}
-}
-
 /** Merge rigid detail by material once, keeping articulated joints independent. */
 function batchRigid(g:THREE.Group) {
  for(const child of [...g.children])if(child instanceof THREE.Group)batchRigid(child);
@@ -155,16 +150,30 @@ function replaceKitPart(target:THREE.Group){
 }
 /** Asynchronous kit loading never blocks entering a match; geometry is reused by every soldier. */
 export function loadModelKit():Promise<void>{
- if(!kitLoading)kitLoading=loadAssetKit().then(()=>{
-  for(const target of kitTargets)replaceKitPart(target);
- }).catch(error=>{console.warn('Optional model kit could not load; using local geometry.',error);});
+ if(!kitLoading)kitLoading=Promise.allSettled([
+  loadAssetKit().then(()=>{for(const target of kitTargets)replaceKitPart(target);}),
+  loadViewmodelArms(),
+  loadWeaponAssets()
+ ]).then(results=>{for(const result of results)if(result.status==='rejected')console.warn('A model asset could not load.',result.reason);});
  return kitLoading;
 }
-export function releaseModel(object:THREE.Object3D){object.traverse(o=>{if(o instanceof THREE.Group)kitTargets.delete(o);});}
-export function buildWeapon(id:WeaponId,withHands=true,lowDetail=false):THREE.Group {
- return fromTemplate('weapon:'+id+':'+withHands+':'+lowDetail,()=>{const result=createWeapon(id,withHands);if(lowDetail)result.traverse(o=>{if(o instanceof THREE.Mesh)o.material=steel;});return result;});
+export function releaseModel(object:THREE.Object3D){
+ object.traverse(o=>{if(o instanceof THREE.Group)kitTargets.delete(o);});
+ releaseViewmodelArms(object);releaseWeaponAsset(object);
 }
-function createWeapon(id:WeaponId,withHands:boolean):THREE.Group {
+export function buildWeapon(id:WeaponId,withHands=true,lowDetail=false):THREE.Group {
+ const root=new THREE.Group();root.name=id;
+ const fallback=fromTemplate('weapon:'+id+':'+lowDetail,()=>{
+  const result=createWeapon(id);
+  if(lowDetail)result.traverse(o=>{if(o instanceof THREE.Mesh)o.material=steel;});
+  return result;
+ });
+ fallback.name='weaponFallback';root.add(fallback);
+ if(!lowDetail)attachWeaponAsset(root,id);
+ if(withHands)attachViewmodelArms(root,id);
+ return root;
+}
+function createWeapon(id:WeaponId):THREE.Group {
  const g=new THREE.Group();g.name=id;
  if(id==='intervention') {
   cube(g,tan,0,-.01,.02,.108,.118,.41);
@@ -242,7 +251,7 @@ function createWeapon(id:WeaponId,withHands:boolean):THREE.Group {
  }
  // Small, contrasting controls and fasteners carry shape without texture downloads.
  if(id!=='knife'){for(const x of [-.049,.049])for(const z of [-.03,.072])cyl(g,silver,x,.014,z,.006,.006,.006,'x');cube(g,black,.052,.027,-.04,.009,.033,.085);}
- if(withHands)hands(g,id);return g;
+ return g;
 }
 
 function makeBoot():THREE.Group {
