@@ -323,7 +323,7 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
  box(yellow,-10.5,6.48,8.6,7.2,.17,.22);
  cylinder(steel,-10.5,6.15,8.6,.24,7.5,'x');
  } else if(map.id==='foundry') foundryLandmarks();
- else relayLandmarks();
+ else {switch(map.id){case 'relay':relayLandmarks();break;default:sign(map.name.toUpperCase(),'#394c4d','#e2ddc7',0,2.2,-map.size/2+.04,9,1.2);}}
  arenaSurface();
  // Exterior industry, terrain, and distant mountain ridges close the horizon.
  // Connected, irregular ridges and worn plateaus avoid repeated cone silhouettes.

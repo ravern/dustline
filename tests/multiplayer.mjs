@@ -23,7 +23,7 @@ async function connect() {
   await until(() => client.token, 'welcome'); return client;
 }
 const results = [];
-for (const [mode, map, count] of [['ffa', 'yard', 8], ['tdm', 'foundry', 16], ['ctf', 'relay', 16]]) {
+for (const [mode, map, count] of [['ffa', 'bazaar', 16], ['tdm', 'overpass', 16], ['ctf', 'citadel', 16]]) {
   const clients = [];
   try {
     const host = await connect(); clients.push(host);

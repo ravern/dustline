@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FLAG_RETURN_TIME, GameServer } from '../server/game.ts';
-import { getMap, type MapId } from '../shared/map.ts';
+import { MAPS, getMap, type MapId } from '../shared/map.ts';
 import { DT, move, spawnBody } from '../shared/physics.ts';
 import type { GameMode, Input, ServerMessage, Team } from '../shared/types.ts';
 const loadout = { primary: 'intervention' as const, secondary: 'm9' as const };
@@ -39,9 +39,9 @@ test('humans must enter a name; blank requests never create rooms or replace pla
   assert.match((messages.at(-1) as { message: string }).message, /Enter your name/);
 });
 
-test('FFA allows eight players; team modes allow sixteen with eight on each team', () => {
+test('All modes allow sixteen players; team modes have eight on each team', () => {
   for (const mode of ['ffa', 'tdm', 'ctf'] as const) {
-    const { game, host, room, join, messages } = lobby(mode), capacity = mode === 'ffa' ? 8 : 16;
+    const { game, host, room, join, messages } = lobby(mode), capacity = 16;
     for (let index = 1; index < capacity; index++) join(`p${index}`);
     const overflow = join('overflow'); assert.equal(overflow.room, undefined);
     assert.equal(room.members.size, capacity); assert.equal(room.info.maxPlayers, capacity);
@@ -65,10 +65,10 @@ test('bot fill and late joins obey total and per-team limits', () => {
   }
 });
 
-test('changing modes balances teams, updates limits, resets readiness, and cannot overfill FFA', () => {
+test('changing modes balances teams, updates limits, resets readiness, and retains nine humans when switching to FFA', () => {
   const { game, host, room, join } = lobby('tdm');
   for (let index = 0; index < 8; index++) join(`p${index}`);
-  game.receive(host, { type: 'settings', mode: 'ffa' }, 1000); assert.equal(room.mode, 'tdm');
+  game.receive(host, { type: 'settings', mode: 'ffa' }, 1000); assert.equal(room.mode, 'ffa');
   game.receive(host, { type: 'settings', mode: 'ctf', map: 'relay', bots: 99 }, 1000);
   assert.equal(room.mode, 'ctf'); assert.equal(room.limit, 3); assert.equal(room.map, 'relay'); assert.equal(room.bots, 7);
   assert.equal(room.members.get('p0')!.ready, false);
@@ -120,7 +120,7 @@ test('flag objectives cannot be picked up through solid cover', () => {
 });
 
 test('selected maps drive authoritative spawns, flags, snapshots, and movement', () => {
-  for (const id of ['yard', 'foundry', 'relay'] as const) {
+  for (const {id} of MAPS) {
     const { game, host, room } = lobby('ctf', 1, id); game.receive(host, { type: 'start' }, 1000);
     const map = getMap(id), player = room.players.get('a')!;
     assert.ok(map.teamSpawns[player.team!].some(s => s.x === player.body.x && s.z === player.body.z));
@@ -140,7 +140,7 @@ test('new matches reject stale commands without spending acknowledgement or move
 });
 
 test('practice bots navigate each arena to pick up and capture flags without teleporting', () => {
-  for (const map of ['yard', 'foundry', 'relay'] as const) {
+  for (const {id:map} of MAPS) {
     const { game, host, room } = lobby('ctf', 1, map); game.receive(host, { type: 'start' }, 1000); room.limit = 1;
     // Isolate objective navigation from combat with a stationary distant observer.
     room.players.get(host.id)!.body.y = 200;
@@ -157,9 +157,11 @@ test('practice bots navigate each arena to pick up and capture flags without tel
 });
 
 test('full team deployments give each player an unoccupied spawn', () => {
-  for (const map of ['yard', 'foundry', 'relay'] as const) {
-    const { game, host, room } = lobby('tdm', 15, map); game.receive(host, { type: 'start' }, 1000);
+  for (const {id:map} of MAPS) {
+    for (const mode of ['ffa','tdm'] as const) {
+    const { game, host, room } = lobby(mode, 15, map); game.receive(host, { type: 'start' }, 1000);
     const positions = [...room.players.values()].map(p => `${p.body.x},${p.body.y},${p.body.z}`);
-    assert.equal(new Set(positions).size, 16, `${map}: teammates should not spawn inside one another`);
+    assert.equal(new Set(positions).size, 16, `${map} ${mode}: players should not spawn inside one another`);
+    }
   }
 });

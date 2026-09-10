@@ -12,11 +12,11 @@ function openAt(map:MapDefinition,p:Vec3,height=1.75){
     p.y+height>b.y-b.h/2&&p.y<b.y+b.h/2);
 }
 
-test('all three arenas expose complete spawn sets and the legacy Yard aliases',()=>{
-  assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay']);
+test('all nine arenas expose complete spawn sets and the legacy Yard aliases',()=>{
+  assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay','bazaar','harbor','citadel','junction','oasis','overpass']);
   assert.equal(getMap('yard').boxes,MAP_BOXES);assert.equal(getMap('yard').spawns,SPAWNS);assert.equal(getMap('yard').size,MAP_SIZE);
   for(const map of MAPS){
-    assert.ok(map.spawns.length>=8);
+    assert.ok(map.spawns.length>=16);
     for(const team of ['red','blue'] as const){
       assert.equal(map.teamSpawns[team].length,8);
       assert.ok(openAt(map,map.flagBases[team]),`${map.id} ${team} flag obstructed`);
@@ -59,8 +59,8 @@ test('movement uses the selected arena collision and bounds, without mutating an
   assert.equal(empty.boxes.length,0);
 });
 
-test('Foundry and Relay galleries can be reached up their stairs without jumping',()=>{
-  for(const [id,x,start,height] of [['foundry',18.8,17,3.6],['relay',20,13,3]] as const){
+test('Raised routes can be reached up their stairs without jumping',()=>{
+  for(const [id,x,start,height] of [['foundry',18.8,17,3.6],['relay',20,13,3],['citadel',18.8,17,3.6],['overpass',16,16,3.6]] as const){
     const map=getMap(id);let b=spawnBody({x,y:0,z:start}),highest=0;
     for(let i=0;i<145;i++){b=move(b,{...input,right:0,forward:1},DT,map);highest=Math.max(highest,b.y);}
     assert.ok(highest>=height-.001,`${id} staircase only reached ${highest}`);

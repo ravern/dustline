@@ -1,6 +1,6 @@
 import type { Box, Vec3 } from './types.ts';
 
-export type MapId = 'yard' | 'foundry' | 'relay';
+export type MapId = 'yard' | 'foundry' | 'relay' | 'bazaar' | 'harbor' | 'citadel' | 'junction' | 'oasis' | 'overpass';
 export interface MapDefinition {
   id: MapId; name: string; subtitle: string; size: number; boxes: Box[]; spawns: Vec3[];
   teamSpawns: { red: Vec3[]; blue: Vec3[] };
@@ -185,11 +185,84 @@ const relay:MapDefinition = {
   theme:{sky:0xaebfc7,ground:0x87948c,fog:.006,sun:0xe0edff,steel:0x4d666e,accent:0xdfad53},
 };
 
-// Small authored barrel clusters sit against the perimeter, away from spawn
-// exits. Their collision travels with the map just like larger cover.
-for(const map of [yard,foundry,relay])for(const side of [-1,1])for(let i=0;i<3;i++) {
-  map.boxes.push({x:side*(map.size/2-2.1),y:.475,z:side*(map.size/2-9)+i*.74,w:.62,h:.95,d:.62,kind:'barrel'});
+// Original arena layouts: short crossings, side routes, and clear landmarks.
+// Coordinates describe real solids; the renderer and server share every route.
+const solid = (x:number,z:number,w:number,d:number,h:number,kind='wall',color=0x9c998a):Box => ({x,y:h/2,z,w,h,d,kind,color});
+function arena(id:MapId,name:string,subtitle:string,size:number,theme:MapDefinition['theme'],boxes:Box[]):MapDefinition {
+  const teamSpawns={red:teamSpawnRows(-size/2+4,1.4),blue:teamSpawnRows(size/2-4,1.4)};
+  return {id,name,subtitle,size,theme,boxes:[...boundary(size),...boxes],teamSpawns,
+    spawns:[...teamSpawns.red,...teamSpawns.blue,v(-size/2+4,0),v(size/2-4,0)],
+    flagBases:{red:v(0,-size/2+7),blue:v(0,size/2-7)}};
 }
+const bazaar=arena('bazaar','Bazaar','Market alleys and a split courtyard',76,
+  {sky:0xe0c8a6,ground:0xcbb48a,fog:.0045,sun:0xffe2b5,steel:0x756654,accent:0xc98252},[
+    // Alternating blocks make a zigzag main street, with two open outer alleys.
+    ...[-1,1].flatMap(s=>[
+      solid(s*13,s*21,13,8,5,'wall',0xc69975),solid(-s*19,s*14,10,16,5,'wall',0xd3be91),
+      solid(s*11,s*2,9,8,4,'wall',0xc6ac83),solid(-s*27,s*24,4,3,2,'crate'),
+      solid(s*24,-s*4,3,6,1.3,'barrier'),solid(s*3,s*15,3,2,1.3,'crate'),
+    ]),solid(0,0,3,3,1.1,'plinth',0xd3be91),
+  ]);
+const harbor=arena('harbor','Harbor','Cargo lanes around a loading dock',84,
+  {sky:0xb7ced4,ground:0x899b9c,fog:.0045,sun:0xe6f4ff,steel:0x4c6770,accent:0xd4ac55},[
+    ...[-1,1].flatMap(s=>[
+      solid(s*20,s*24,14,3,2.8,'container',0x426d7e),solid(-s*22,s*15,3,16,2.8,'container',0x9f593f),
+      solid(s*11,s*9,3,14,2.8,'container',0x578079),solid(s*27,-s*6,11,3,2.8,'container',0xb39b58),
+      solid(s*4,s*25,4,2,1.3,'barrier'),solid(-s*30,s*27,2,2,1.5,'crate'),
+      solid(s*28,s*10,3,3,2,'generator'),
+    ]),solid(0,0,6,8,2.8,'container',0x6b8790),
+  ]);
+const citadel=arena('citadel','Citadel','Stone court with two raised galleries',80,
+  {sky:0xd0cbd1,ground:0xa49d90,fog:.004,sun:0xffdbb9,steel:0x625d63,accent:0xc8aa65},[
+    ...[-1,1].flatMap(s=>[
+      solid(s*12,s*24,14,3,5,'wall',0x9b9085),solid(s*8,s*9,3,10,4,'wall',0xb0a18b),
+      solid(-s*28,s*18,5,5,5,'wall',0x8c8483),solid(s*2,s*17,2,2,1.5,'crate'),
+      {x:s*21,y:3.44,z:0,w:8,h:.32,d:16,kind:'deck'},
+      ...[-1,1].map(z=>solid(s*24,z*6,1,1,3.3,'wall',0x9b9085)),
+      ...Array.from({length:12},(_,i)=>solid(s*18.8,s*(15.3-i*.7),2,.72,(i+1)*.3,'stairs')),
+      {x:s*24.9,y:4.13,z:0,w:.14,h:1.06,d:16,kind:'rail'},
+    ]),solid(0,0,4,4,2,'plinth',0xa89c8d),
+  ]);
+const junction=arena('junction','Junction','Rail depot with open cross routes',88,
+  {sky:0xc2cad5,ground:0x828c8c,fog:.004,sun:0xffd9af,steel:0x50636c,accent:0xe0b357},[
+    // Long cars divide three lanes; gaps between the cars permit crossing.
+    ...[-1,1].flatMap(s=>[
+      solid(s*12,s*19,3.5,19,3.2,'container',0x84724f),solid(s*12,-s*10,3.5,13,3.2,'container',0x596f75),
+      solid(s*30,s*18,7,10,4,'wall',0x9ba6a6),solid(s*27,-s*9,5,3,2.3,'generator'),
+      solid(s*5,s*27,4,1,1.3,'barrier'),solid(s*24,s*1,3,3,1.5,'crate'),
+    ]),solid(0,0,5,4,2.4,'generator',0x738077),
+  ]);
+const oasis=arena('oasis','Oasis','Desert ruins with a sheltered center',80,
+  {sky:0xd8c6a9,ground:0xd4bc8d,fog:.004,sun:0xffe6b8,steel:0x82765a,accent:0x69a49a},[
+    // Four broken walls shelter the middle while the diagonal gaps stay open.
+    solid(0,-7,9,1.5,4,'wall',0xc6ad7f),solid(0,7,9,1.5,4,'wall',0xc6ad7f),
+    solid(-7,0,1.5,9,4,'wall',0xd8c699),solid(7,0,1.5,9,4,'wall',0xd8c699),
+    ...[-1,1].flatMap(s=>[
+      solid(s*19,s*20,12,3,3,'wall',0xcab587),solid(-s*22,s*15,3,10,3,'wall',0xd8c699),
+      solid(s*24,-s*5,4,4,4.5,'wall',0xc6ad7f),solid(s*11,s*20,2,2,1.2,'crate'),
+      solid(s*3,s*25,4,1,1.3,'barrier'),
+    ]),solid(0,0,3,3,.7,'plinth',0x65928a),
+  ]);
+const overpass=arena('overpass','Overpass','Bridge crossing above covered ground routes',84,
+  {sky:0xb9c9d0,ground:0x8f9c9d,fog:.004,sun:0xe9efff,steel:0x596b74,accent:0xe0aa50},[
+    {x:0,y:3.44,z:0,w:42,h:.32,d:12,kind:'deck'},
+    ...[-1,1].flatMap(s=>[
+      ...[-1,1].map(z=>solid(s*19,z*4,1.2,1.2,3.3,'wall',0x879397)),
+      ...Array.from({length:12},(_,i)=>solid(s*16,s*(14.3-i*.8),3,.82,(i+1)*.3,'stairs')),
+      solid(-s*22,s*22,12,4,3,'container',0x617c83),solid(s*27,s*17,4,7,3,'wall',0xa7acaa),
+      solid(s*5,s*22,5,1,1.3,'barrier'),solid(-s*8,s*13,3,3,2,'crate'),
+      {x:s*5,y:4.2,z:s*2,w:4,h:1.2,d:1,kind:'barrier'},
+      {x:0,y:4.13,z:s*5.9,w:25,h:1.06,d:.14,kind:'rail'},
+    ]),
+  ]);
 
-export const MAPS: readonly MapDefinition[] = [yard,foundry,relay];
+export const MAPS: readonly MapDefinition[] = [yard,foundry,relay,bazaar,harbor,citadel,junction,oasis,overpass];
+// Every arena needs at least sixteen separated FFA starts for a full deployment.
+for(const map of MAPS) {
+  const candidates=[...map.teamSpawns.red,...map.teamSpawns.blue];
+  for(const spawn of candidates.filter(p=>map.spawns.every(other=>Math.hypot(p.x-other.x,p.z-other.z)>1.2))) map.spawns.push(spawn);
+  for(const side of [-1,1])for(let i=0;i<3;i++) {
+    map.boxes.push({x:side*(map.size/2-2.1),y:.475,z:side*(map.size/2-9)+i*.74,w:.62,h:.95,d:.62,kind:'barrel'});
+  }
+}
 export function getMap(id:MapId|string = 'yard'):MapDefinition { return MAPS.find(map=>map.id===id) ?? yard; }

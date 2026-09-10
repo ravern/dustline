@@ -97,8 +97,8 @@ test('commands sent while dead are acknowledged without replaying stale movement
 });
 test('a late human replaces a bot in a full live match and inherits the requested loadout', () => {
   const game = new GameServer(); game.connect(() => {}, 'a'); game.connect(() => {}, 'b');
-  game.receive('a', { type: 'create', name: 'Alpha', loadout: loadout(), bots: 7 }, 1000); game.receive('a', { type: 'start' }, 1000);
-  const room = game.peers.get('a')!.room!; assert.equal(room.players.size, 8);
+  game.receive('a', { type: 'create', name: 'Alpha', loadout: loadout(), bots: 15 }, 1000); game.receive('a', { type: 'start' }, 1000);
+  const room = game.peers.get('a')!.room!; assert.equal(room.players.size, 16);
   game.receive('b', { type: 'join', code: room.code, name: 'Bravo', loadout: loadout('scar') }, 1002);
-  assert.equal(room.players.size, 8); assert.equal([...room.players.values()].filter(p => p.bot).length, 6); assert.equal(room.players.get('b')!.ammo[0], 20); assert.equal(room.players.get('b')!.loadout.primary, 'scar');
+  assert.equal(room.players.size, 16); assert.equal([...room.players.values()].filter(p => p.bot).length, 14); assert.equal(room.players.get('b')!.ammo[0], 20); assert.equal(room.players.get('b')!.loadout.primary, 'scar');
 });

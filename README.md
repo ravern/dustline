@@ -1,14 +1,14 @@
 # Dustline
 
-A browser FPS with three industrial arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
+A browser FPS with nine arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
 
 | Mode | Players | Win condition |
 | --- | --- | --- |
-| Free for All | Up to 8 | Individual eliminations |
+| Free for All | Up to 16 | Individual eliminations |
 | Team Deathmatch | Up to 16, 8 per team | Combined team eliminations |
 | Capture the Flag | Up to 16, 8 per team | Bring the enemy flag to your home flag |
 
-The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
+The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Bazaar adds market alleys. Harbor has cargo lanes. Citadel has a stone court and raised galleries. Junction has rail lanes and crossing routes. Oasis has desert ruins. Overpass has a bridge and covered ground routes. These are original layouts. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
 
 ## Play locally
 
@@ -26,6 +26,10 @@ Enter your own callsign; the game never assigns a default human name. Create a l
 For LAN play, open the host computer's LAN address in another browser. Local development exposes available addresses through `/api/info`; production does not publish server interface addresses. Invite links use the current public origin when hosted.
 
 ## Controls
+
+Open **Settings → Key bindings** to change any action to a keyboard key or mouse button. Bindings apply to you only and persist in this browser. Used controls cannot be assigned twice. **Restore default controls** resets all bindings. Left and right modifier keys share a binding. Mouse movement controls your view; Escape always releases the mouse.
+
+Default controls:
 
 | Action | Control |
 | --- | --- |
