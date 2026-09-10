@@ -39,13 +39,13 @@ test('humans must enter a name; blank requests never create rooms or replace pla
   assert.match((messages.at(-1) as { message: string }).message, /Enter your name/);
 });
 
-test('All modes allow sixteen players; team modes have eight on each team', () => {
+test('All modes allow thirty-two players; team modes have sixteen on each team', () => {
   for (const mode of ['ffa', 'tdm', 'ctf'] as const) {
-    const { game, host, room, join, messages } = lobby(mode), capacity = 16;
+    const { game, host, room, join, messages } = lobby(mode), capacity = 32;
     for (let index = 1; index < capacity; index++) join(`p${index}`);
     const overflow = join('overflow'); assert.equal(overflow.room, undefined);
     assert.equal(room.members.size, capacity); assert.equal(room.info.maxPlayers, capacity);
-    if (mode !== 'ffa') for (const team of ['red', 'blue'] as Team[]) assert.equal([...room.members.values()].filter(p => p.team === team).length, 8);
+    if (mode !== 'ffa') for (const team of ['red', 'blue'] as Team[]) assert.equal([...room.members.values()].filter(p => p.team === team).length, 16);
     game.receive(host, { type: 'start' }, 1000); assert.equal(room.players.size, capacity);
     game.receive(host, { type: 'list' }, 1000);
     const list = messages.at(-1) as Extract<ServerMessage, { type: 'rooms' }>;
@@ -58,11 +58,20 @@ test('bot fill and late joins obey total and per-team limits', () => {
     const { game, host, room, join } = lobby(mode, 99);
     game.receive(host, { type: 'start' }, 1000);
     assert.equal(room.players.size, room.maxPlayers);
-    for (let index = 0; index < 6; index++) join(`late${index}`);
+    for (let index = 0; index < 31; index++) join(`late${index}`);
     assert.equal(room.players.size, room.maxPlayers);
-    assert.equal([...room.players.values()].filter(p => !p.bot).length, 7);
-    if (mode !== 'ffa') for (const team of ['red', 'blue'] as Team[]) assert.equal([...room.players.values()].filter(p => p.team === team).length, 8);
+    assert.equal([...room.players.values()].filter(p => !p.bot).length, 32);
+    if (mode !== 'ffa') for (const team of ['red', 'blue'] as Team[]) assert.equal([...room.players.values()].filter(p => p.team === team).length, 16);
   }
+});
+
+test('late humans can fill a running team match beyond the old team limit', () => {
+  const { game, host, room, join } = lobby('tdm');
+  join('first'); game.receive(host, { type: 'start' }, 1000);
+  for (let index = 0; index < 30; index++) assert.equal(join(`late${index}`).room, room);
+  assert.equal(room.players.size, 32);
+  for (const team of ['red', 'blue'] as Team[]) assert.equal([...room.players.values()].filter(p => p.team === team).length, 16);
+  assert.equal(join('overflow').room, undefined);
 });
 
 test('changing modes balances teams, updates limits, resets readiness, and retains nine humans when switching to FFA', () => {
@@ -70,7 +79,7 @@ test('changing modes balances teams, updates limits, resets readiness, and retai
   for (let index = 0; index < 8; index++) join(`p${index}`);
   game.receive(host, { type: 'settings', mode: 'ffa' }, 1000); assert.equal(room.mode, 'ffa');
   game.receive(host, { type: 'settings', mode: 'ctf', map: 'relay', bots: 99 }, 1000);
-  assert.equal(room.mode, 'ctf'); assert.equal(room.limit, 3); assert.equal(room.map, 'relay'); assert.equal(room.bots, 7);
+  assert.equal(room.mode, 'ctf'); assert.equal(room.limit, 3); assert.equal(room.map, 'relay'); assert.equal(room.bots, 23);
   assert.equal(room.members.get('p0')!.ready, false);
   game.receive(host, { type: 'settings', mode: 'bogus', map: 'yard' }, 1000); assert.equal(room.map, 'relay');
 });
@@ -159,9 +168,9 @@ test('practice bots navigate each arena to pick up and capture flags without tel
 test('full team deployments give each player an unoccupied spawn', () => {
   for (const {id:map} of MAPS) {
     for (const mode of ['ffa','tdm'] as const) {
-    const { game, host, room } = lobby(mode, 15, map); game.receive(host, { type: 'start' }, 1000);
+    const { game, host, room } = lobby(mode, 31, map); game.receive(host, { type: 'start' }, 1000);
     const positions = [...room.players.values()].map(p => `${p.body.x},${p.body.y},${p.body.z}`);
-    assert.equal(new Set(positions).size, 16, `${map} ${mode}: players should not spawn inside one another`);
+    assert.equal(new Set(positions).size, 32, `${map} ${mode}: players should not spawn inside one another`);
     }
   }
 });

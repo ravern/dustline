@@ -6,9 +6,9 @@ export type Slot = 0 | 1 | 2;
 export type GameMode = 'ffa' | 'tdm' | 'ctf';
 export type Team = 'red' | 'blue';
 export const MODES: Record<GameMode, { name: string; maxPlayers: number; defaultLimit: number }> = {
-  ffa: { name: 'Free for All', maxPlayers: 16, defaultLimit: 20 },
-  tdm: { name: 'Team Deathmatch', maxPlayers: 16, defaultLimit: 50 },
-  ctf: { name: 'Capture the Flag', maxPlayers: 16, defaultLimit: 3 },
+  ffa: { name: 'Free for All', maxPlayers: 32, defaultLimit: 20 },
+  tdm: { name: 'Team Deathmatch', maxPlayers: 32, defaultLimit: 50 },
+  ctf: { name: 'Capture the Flag', maxPlayers: 32, defaultLimit: 3 },
 };
 export interface Loadout { primary: PrimaryId; secondary: 'm9' }
 export interface Vec3 { x: number; y: number; z: number }

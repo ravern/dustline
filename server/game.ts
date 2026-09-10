@@ -100,7 +100,7 @@ export class Room {
         const humans = (t: Team) => [...this.members.values()].filter(p => !p.bot && p.team === t).length;
         team = humans('red') <= humans('blue') ? 'red' : 'blue';
       }
-      const teamFull = team !== null && [...this.members.values()].filter(p => p.team === team).length >= 8;
+      const teamFull = team !== null && [...this.members.values()].filter(p => p.team === team).length >= this.maxPlayers / 2;
       if (this.players.size >= this.maxPlayers || teamFull) {
         const bot = [...this.players.values()].find(p => p.bot && (team === null || p.team === team));
         if (bot) this.removePlayer(bot.id, now);

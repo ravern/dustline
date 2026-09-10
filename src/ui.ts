@@ -17,7 +17,7 @@ export function mountUI(){
     <main id="play-panel" class="panel play-panel">
       <div class="menu-eyebrow"><span class="live-square"></span> ${MAPS.length} ARENAS <span class="slash">/</span> THREE WAYS TO WIN</div>
       <h1>DUST &amp;<br/>THUNDER<span>.</span></h1><p class="map-intro">Choose your ground. Bring your squad.</p>
-      <div class="map-tags"><span>UP TO 16 PLAYERS</span><span>FFA / TDM / CTF</span><span>RESPAWN & REDEPLOY</span></div>
+      <div class="map-tags"><span>UP TO ${Math.max(...Object.values(MODES).map(mode=>mode.maxPlayers))} PLAYERS</span><span>FFA / TDM / CTF</span><span>RESPAWN & REDEPLOY</span></div>
       <div class="deploy-box"><label for="callsign">YOUR CALLSIGN</label><input id="callsign" maxlength="18" autocomplete="off" spellcheck="false" placeholder="Enter callsign" required/><button id="create-lobby" class="primary large"><span>CREATE LOBBY<small>Bring your squad. Set your rules.</small></span><b>↗</b></button><button id="practice" class="secondary"><span>SOLO WARM-UP</span><small>YOU + 3 BOTS</small><b>→</b></button></div>
       <div class="join-box"><label for="room-code">HAVE AN INVITE?</label><div><input id="room-code" aria-label="Room code" maxlength="6" autocomplete="off" placeholder="ROOM CODE" spellcheck="false"/><button id="join-lobby" aria-label="Join room">JOIN →</button></div></div>
     </main>

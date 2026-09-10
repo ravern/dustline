@@ -16,9 +16,9 @@ test('all eighteen arenas expose complete spawn sets and the legacy Yard aliases
   assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay','bazaar','harbor','citadel','junction','oasis','overpass','canal','crossfire','hangar','quarry','outpost','gardens','vault','terminal','switchback']);
   assert.equal(getMap('yard').boxes,MAP_BOXES);assert.equal(getMap('yard').spawns,SPAWNS);assert.equal(getMap('yard').size,MAP_SIZE);
   for(const map of MAPS){
-    assert.ok(map.spawns.length>=16);
+    assert.ok(map.spawns.length>=32);
     for(const team of ['red','blue'] as const){
-      assert.equal(map.teamSpawns[team].length,8);
+      assert.equal(map.teamSpawns[team].length,16);
       assert.ok(openAt(map,map.flagBases[team]),`${map.id} ${team} flag obstructed`);
       for(const p of map.teamSpawns[team])assert.ok(openAt(map,p),`${map.id} ${team} spawn obstructed: ${JSON.stringify(p)}`);
       const positions=map.teamSpawns[team];

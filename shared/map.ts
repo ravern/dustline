@@ -89,10 +89,10 @@ const boundary = (size:number):Box[] => {
     {x:edge,y:1.65,z:0,w:1.2,h:3.3,d:size,kind:'boundary'},
   ];
 };
-// Bases face one another along Z. Eight staggered positions give a full team a
+// Bases face one another along Z. Sixteen staggered positions give a full team a
 // sheltered exit without spawning inside cover, on a flag, or on another player.
 const teamSpawnRows = (z:number, spread=1):Vec3[] =>
-  [-1,1].flatMap(row => [-7.5,-2.5,2.5,7.5].map(x=>v(x*spread,z+row*1.6)));
+  [-1,1].flatMap(row => [-8.75,-6.25,-3.75,-1.25,1.25,3.75,6.25,8.75].map(x=>v(x*spread,z+row*1.6)));
 
 const yard:MapDefinition = {
   id:'yard',name:'Yard',subtitle:'Desert extraction facility',size:MAP_SIZE,boxes:MAP_BOXES,spawns:SPAWNS,
@@ -345,7 +345,7 @@ const switchback=arena('switchback','Switchback','Staggered walls with fast diag
   ]);
 
 export const MAPS: readonly MapDefinition[] = [yard,foundry,relay,bazaar,harbor,citadel,junction,oasis,overpass,canal,crossfire,hangar,quarry,outpost,gardens,vault,terminal,switchback];
-// Every arena needs at least sixteen separated FFA starts for a full deployment.
+// Every arena needs at least thirty-two separated FFA starts for a full deployment.
 for(const map of MAPS) {
   const candidates=[...map.teamSpawns.red,...map.teamSpawns.blue];
   for(const spawn of candidates.filter(p=>map.spawns.every(other=>Math.hypot(p.x-other.x,p.z-other.z)>1.2))) map.spawns.push(spawn);
