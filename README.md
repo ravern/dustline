@@ -82,3 +82,9 @@ npm run test:multiplayer
 ```
 
 The automated tests cover movement, map traversal, capacity, teams, CTF objectives, weapons, latency, input validation, and reconnect sessions. Browser tests use real input for movement and combat and save evidence to ignored `test-results/`. If a restricted environment blocks the `tsx` CLI socket, run `node --import tsx --test tests/*.test.ts`.
+
+## Automatic deployment
+
+Pushes to `main` run the [Deploy workflow](.github/workflows/deploy.yml), which installs dependencies, runs the tests, builds the client, and deploys only if those checks pass. Deployments run one at a time and finish with an HTTP health check. The workflow can also be run manually from the Actions tab on `main`.
+
+Configure the GitHub `production` environment to allow only `main`, and store `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_GIT_REMOTE`, and `DEPLOY_HEALTH_URL` as encrypted secrets. Use a dedicated SSH key restricted on the server to this app’s Git receive command, with shell access and forwarding disabled, and pin the verified SSH host keys. Server addresses, credentials, and server deployment output stay out of this public repository and its Actions logs.
