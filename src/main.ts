@@ -150,31 +150,42 @@ addEventListener('blur',resetControls);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)resetControls();});
 for(const event of ['contextmenu','auxclick'])addEventListener(event,e=>{switch(phase==='playing'||settingsOpen){case true:e.preventDefault();}});
 addEventListener('mousemove',e=>{if(!document.pointerLockElement||phase!=='playing'||self?.hp===0)return;const factor=.0021*view.sensitivity*(view.ads>.5?(slot===0&&loadout.primary==='intervention'?.25:.72):1);yaw-=e.movementX*factor;pitch=THREE.MathUtils.clamp(pitch-e.movementY*factor,-1.45,1.45);});
+$('keybind-list').innerHTML=ACTIONS.map(action=>`<div class="binding-row"><span>${CONTROLS[action].label}</span><button type="button" data-bind="${action}" aria-label="Change ${CONTROLS[action].label}"></button></div>`).join('');
 function paintBindings(){
-  $('keybind-list').innerHTML=ACTIONS.map(action=>`<div class="binding-row"><span>${CONTROLS[action].label}</span><button type="button" data-bind="${action}" aria-label="Change ${CONTROLS[action].label}" aria-pressed="${captureBinding===action}">${captureBinding===action?'Press a key or mouse button…':bindings[action].map(controlLabel).join(' / ')}</button></div>`).join('');
+  document.querySelectorAll<HTMLButtonElement>('[data-bind]').forEach(button=>{
+    const action=button.dataset.bind as Action;
+    button.textContent=captureBinding===action?'Press a key or mouse button…':bindings[action].map(controlLabel).join(' / ');
+    button.setAttribute('aria-pressed',String(captureBinding===action));
+  });
   document.querySelectorAll<HTMLElement>('[data-control]').forEach(element=>{element.textContent=bindings[element.dataset.control as Action].map(controlLabel).join(' / ');});
 }
 $('keybind-list').addEventListener('click',event=>{
   const button=(event.target as HTMLElement).closest<HTMLElement>('[data-bind]');
   switch(!!button){case false:return;}
   captureBinding=button!.dataset.bind as Action;paintBindings();
+  button!.after($('binding-status'));button!.setAttribute('aria-describedby','binding-status');button!.focus({preventScroll:true});
   $('binding-status').textContent='Press a key or mouse button. Press Escape to cancel. Used controls must be changed first.';
 });
 $('reset-bindings').onclick=()=>{bindings=defaultBindings();captureBinding=undefined;resetControls();paintBindings();save();$('binding-status').textContent='Default controls restored.';};
 function captureControl(event:KeyboardEvent|MouseEvent){
   switch(captureBinding){case undefined:return;}
+  // UI buttons remain usable while waiting; clicking the active binding assigns LMB.
+  const clicked=event instanceof MouseEvent&&event.button===0&&(event.target as HTMLElement).closest('button,summary,input,select');
+  switch(!!clicked&&clicked!==document.querySelector(`[data-bind="${captureBinding}"]`)){
+    case true:captureBinding=undefined;paintBindings();$('binding-status').textContent='No change made.';return;
+  }
   event.preventDefault();event.stopImmediatePropagation();
   const code=normalizeCode(event instanceof KeyboardEvent?event.code:`Mouse${event.button}`);
   switch(code){case 'Escape':captureBinding=undefined;paintBindings();$('binding-status').textContent='No change made.';return;}
   const error=bindingError(bindings,captureBinding,code);
-  switch(!!error){case true:$('binding-status').textContent=error;return;}
+  switch(!!error){case true:$('binding-status').textContent=error;toast(error);return;}
   bindings[captureBinding]=[code];captureBinding=undefined;resetControls();paintBindings();save();
   $('binding-status').textContent='Control saved in this browser.';
 }
 addEventListener('keydown',captureControl,true);
-addEventListener('mousedown',captureControl,true);
-// Suppress the click after a captured mouse button so it cannot start another edit.
-$('keybind-list').addEventListener('mousedown',event=>event.preventDefault());
+// Capture the completed click so it cannot also start another binding edit.
+addEventListener('click',captureControl,true);
+addEventListener('auxclick',captureControl,true);
 function pressControl(code:string,repeat=false){
   switch(phase!=='playing'||settingsOpen){case true:return;}
   const action=actionForCode(bindings,code);
