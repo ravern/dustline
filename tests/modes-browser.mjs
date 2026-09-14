@@ -26,13 +26,25 @@ try{
   assert.equal(await a.page.locator('[data-bind="forward"]').textContent(),'I');
   await a.page.locator('[data-bind="jump"]').click();await a.page.keyboard.press('i');
   assert.ok((await a.page.locator('#binding-status').textContent()).includes('already uses'));
+  assert.equal(await a.page.locator('[data-bind="jump"]').evaluate(button=>button===document.activeElement),true);
+  const feedback=await a.page.locator('#binding-status').evaluate(element=>{const message=element.getBoundingClientRect(),card=document.querySelector('.settings-card').getBoundingClientRect();return message.top>=card.top&&message.bottom<=card.bottom;});
+  assert.equal(feedback,true,'a rejected key must explain the problem beside the selected control');
+  await a.page.keyboard.press('u');assert.equal(await a.page.locator('[data-bind="jump"]').textContent(),'U');
+  assert.equal(await a.page.locator('#binding-status').textContent(),'Control saved in this browser.');
+  await a.page.locator('[data-bind="jump"]').click();await a.page.keyboard.press('F2');
+  assert.ok((await a.page.locator('#binding-status').textContent()).includes('not supported'));
   await a.page.keyboard.press('Escape');
-  await a.page.locator('[data-bind="jump"]').click();await a.page.mouse.click(700,200,{button:'middle'});
+  await a.page.locator('[data-bind="jump"]').click();await a.page.locator('[data-bind="jump"]').click({button:'middle'});
   assert.equal(await a.page.locator('[data-bind="jump"]').textContent(),'MMB');
+  assert.equal(await a.page.locator('[data-bind="jump"]').getAttribute('aria-pressed'),'false');
   await a.page.locator('[data-bind="aim"]').click();await a.page.keyboard.press('o');
   await a.page.locator('[data-bind="fire"]').click();await a.page.keyboard.press('p');
   await a.page.locator('[data-bind="scoreboard"]').click();await a.page.keyboard.press('b');
   await a.page.locator('[data-bind="pause"]').click();await a.page.keyboard.press('m');
+  // Changing rows and closing settings must work while a binding waits for input.
+  await a.page.locator('[data-bind="forward"]').click();await a.page.locator('[data-bind="jump"]').click();
+  assert.equal(await a.page.locator('[data-bind="jump"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await a.page.locator('[data-bind="forward"]').textContent(),'I');
   await a.page.locator('#settings-done').click();await a.page.reload();await wait(a.page,()=>window.__dustline?.state.connected);
   await a.page.locator('#settings-button').click();await a.page.locator('#keybind-settings summary').click();
   assert.equal(await a.page.locator('[data-bind="forward"]').textContent(),'I');
