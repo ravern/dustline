@@ -1,6 +1,6 @@
 # Dustline
 
-A browser FPS with eighteen arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
+A browser FPS with twenty-one arenas, three game modes, quickscoping, bots, and an authoritative multiplayer server.
 
 | Mode | Players | Win condition |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ A browser FPS with eighteen arenas, three game modes, quickscoping, bots, and an
 | Team Deathmatch | Up to 32, 16 per team | Combined team eliminations |
 | Capture the Flag | Up to 32, 16 per team | Bring the enemy flag to your home flag |
 
-The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Bazaar adds market alleys. Harbor has cargo lanes. Citadel has a stone court and raised galleries. Junction has rail lanes and crossing routes. Oasis has desert ruins. Overpass has a bridge and covered ground routes. Canal has parallel banks and crossings. Crossfire has offset streets. Hangar has twin covered halls. Quarry has stone terraces. Outpost has four compounds. Gardens has a central pavilion. Vault has a covered bunker. Terminal has a covered concourse. Switchback has staggered walls and diagonal routes. These are original layouts. Decorative dunes have been removed from the arena walls so players cannot hide inside them. Exterior props remain outside the playable area. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
+The Yard is a desert scrapyard with a climbable drilling rig. Foundry adds furnace halls, a central gantry, and covered flanks. Relay is a mountain communications compound with radar dishes and elevated galleries. Bazaar adds market alleys. Harbor has cargo lanes. Citadel has a stone court and raised galleries. Junction has rail lanes and crossing routes. Oasis has desert ruins. Overpass has a bridge and covered ground routes. Canal has parallel banks and crossings. Crossfire has offset streets. Hangar has twin covered halls. Quarry has stone terraces. Outpost has four compounds. Gardens has a central pavilion. Vault has a covered bunker. Terminal has a covered concourse. Switchback has staggered walls and diagonal routes. Airfield connects terminal shops and a raised dining lounge to a playable aircraft: climb the boarding bridge, move through the cabin and cockpit, then leave via the wing doors or rear stairs onto the exposed apron. Homestead has two opposing two-story homes with living rooms, kitchens, garages, upstairs bedrooms, street-facing windows, and balcony stair loops; an enterable bus and open-backed truck break up the center street. Derrick combines raised earth shoulders, a low service route, pipe cover, and two climbable drilling decks. Shared geometry defines every playable floor, wall opening, staircase, and map boundary. These are original layouts. Decorative dunes have been removed from the arena walls so players cannot hide inside them. Exterior props remain outside the playable area. Every arena uses the same collision and spawn definitions on the client and server. Teams are balanced automatically; friendly fire is disabled. In CTF, your flag must be home to capture, touching a dropped friendly flag returns it, and abandoned flags return automatically.
 
 ## Play locally
 
@@ -21,7 +21,7 @@ npm run dev
 
 Open [localhost:3000](http://localhost:3000). On macOS, **Start Dustline.command** installs missing dependencies and starts the game; **Stop Dustline.command** stops that launcher's process.
 
-Enter your own callsign; the game never assigns a default human name. Create a lobby, choose the map, mode, bots, score limit, and time limit, then share **Copy invite**. Guests ready up before the host starts. **Solo warm-up** starts an FFA match with three bots. Humans can replace bots in a full running match. Loadouts include a primary weapon, M9, and knife.
+Enter your own callsign; the game never assigns a default human name. Create a lobby, choose the map, mode, bots, score limit, and time limit, then share **Copy invite**. Guests ready up before the host starts. **Solo warm-up** starts an FFA match with three bots. Humans can replace bots in a full running match. The armory stores five named loadout presets in your browser. Each independently selects a primary (Intervention, AK-47, or SCAR-H) and secondary (M9, Desert Eagle, or automatic Glock 18), plus a knife. Every life starts with one frag grenade and one flashbang. Open **Escape → Change loadout** during a match, or release the mouse on the death screen, to edit or switch presets. The selected weapons take effect on your next respawn; changing a preset does not refill your current ammunition.
 
 For LAN play, open the host computer's LAN address in another browser. Local development exposes available addresses through `/api/info`; production does not publish server interface addresses. Invite links use the current public origin when hosted.
 
@@ -35,25 +35,28 @@ Default controls:
 | --- | --- |
 | Move / look | WASD / mouse |
 | Sprint | Shift while moving forward |
-| Jump | Space |
+| Jump / vault | Space while moving toward nearby low cover |
 | Crouch / slide | Hold C or Control; press while sprinting to slide |
 | Fire / knife | Left mouse |
 | Aim | Hold right mouse |
 | Reload | R |
-| Primary / M9 / knife | 1 / 2 / 3 |
+| Primary / secondary / knife | 1 / 2 / 3 |
 | Quick melee / swap | V / Q |
+| Frag / flashbang | G / F |
 | Scoreboard | Hold Tab |
 | Release mouse | Escape |
 
-Crouch lowers the camera and collision body; standing requires overhead clearance. Sliding lowers the body further and shows your legs and boots. Remote players bend their hips and knees into these stances. The Intervention reaches aimed accuracy after 160 ms. Health regenerates after five seconds without damage and respawns take 2.5 seconds.
+Crouch lowers the camera and collision body; standing requires overhead clearance. Sliding lowers the body further and shows your legs and boots. Remote players bend their hips and knees into these stances. The Intervention reaches aimed accuracy after 160 ms. Health regenerates after five seconds without damage and respawns take five seconds. Space near suitable cover vaults over it when the full route and landing have clearance. Jumping and vaulting show your legs and tuck your knees. Grenades bounce off the same collision geometry as players; solid cover blocks blast damage and flashes. Frags can damage their owner, and looking away reduces a flash. Bots take time to acquire a target and fire in inaccurate bursts.
 
 ## Visual assets and performance
 
-First-person arms use a continuous anatomical surface, fitted tactical gloves, and a six-bone rig that keeps the shoulders anchored during reloads. Weapon models include textured AK-family and M9 meshes, a textured bayonet, and original Blender-authored SCAR and Intervention models. The game shares geometry, uses 1K weapon textures, and keeps simpler weapons on distant players. Source files and rebuild scripts are in `art/` and `tools/`; see [weapon credits and rebuild instructions](public/models/weapons/SOURCES.md) and [arm provenance](art/arms/README.md).
+First-person arms use a continuous anatomical surface, fitted tactical gloves, and a six-bone rig that keeps the shoulders anchored during reloads. Weapon models include textured AK-family and M9 meshes, a textured bayonet, and original Blender-authored SCAR, Intervention, Desert Eagle, and Glock 18 models. The game shares geometry, uses 1K weapon textures, and keeps simpler weapons on distant players. Source files and rebuild scripts are in `art/` and `tools/`; see [weapon credits and rebuild instructions](public/models/weapons/SOURCES.md) and [arm provenance](art/arms/README.md).
+
+Each weapon has its own recoil impulse, recovery, handling inertia, and draw timing. The heavier weapons settle more deliberately while mouse aiming remains immediate. Original layered gunshot audio combines the initial crack, body, reflections, and mechanical action in cached buffers; reload sounds follow the animation and stop when canceled.
 
 The original prop kit contains boots, crates, drums, and concrete barriers. Regenerate `art/dustline-kit.blend` and its approximately 400 KB game export with Blender's `--background --python tools/build-assets.py`. The included game assets run without additional downloads from asset services.
 
-Static scenery is batched by material; reused props are instanced. Player and weapon geometry is cached, decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows and lowers the render resolution. **High** uses directional shadows and weapon self shadows. Each map has a matching sky and reflection environment; turning and entering cover change the lighting on the weapon and arms. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware.
+Static scenery is batched by material; reused props are instanced. Player and weapon geometry is cached, decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows, reduces internal render resolution, hides optional scenery and particles, and reduces distant character animation and transient effects while retaining gameplay cover and objectives. **High** uses directional shadows and weapon self shadows. Each map has a matching sky and reflection environment; turning and entering cover change the lighting on the weapon and arms. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware.
 
 ## Multiplayer
 
@@ -78,6 +81,8 @@ With the server running and Google Chrome installed:
 ```sh
 npm run test:browser
 npm run test:modes-browser
+npm run test:armory-browser
+npm run test:vault-browser
 npm run test:multiplayer
 ```
 

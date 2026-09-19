@@ -64,9 +64,9 @@ test('duplicate fire input cannot inflict damage twice and semi-auto requires re
   room.enqueue('a', [command, command], 1000); room.tick(1000); assert.equal(shooter.ammo[0], 4); assert.equal(shooter.ack, 1);
   room.enqueue('a', [command], 1001.1); room.tick(1001.1); assert.equal(shooter.ammo[0], 4);
 });
-test('death respawns after 2.5 seconds with a complete loadout and preserves score', () => {
-  const { room, shooter, target } = setup(); room.shoot(shooter, input(), 1000); room.tick(1002.49); assert.equal(room.players.get('b')!.hp, 0);
-  room.tick(1002.51); const reborn = room.players.get('b')!; assert.equal(reborn.hp, 100); assert.equal(reborn.deaths, 1); assert.equal(reborn.ammo[0], 5); assert.ok(reborn.protectedUntil > 1002.51); assert.ok(room.events.some(e => e.type === 'respawn'));
+test('death respawns after five seconds with a complete loadout and preserves score', () => {
+  const { room, shooter, target } = setup(); room.shoot(shooter, input(), 1000); room.tick(1004.99); assert.equal(room.players.get('b')!.hp, 0);
+  room.tick(1005.01); const reborn = room.players.get('b')!; assert.equal(reborn.hp, 100); assert.equal(reborn.deaths, 1); assert.equal(reborn.ammo[0], 5); assert.ok(reborn.protectedUntil > 1005.01); assert.ok(room.events.some(e => e.type === 'respawn'));
 });
 test('health regenerates only after five seconds without damage', () => {
   const { room, target } = setup(); target.hp = 50; target.lastDamage = 1000;
@@ -93,7 +93,7 @@ test('commands sent while dead are acknowledged without replaying stale movement
   const { room, shooter, target } = setup(); room.shoot(shooter, input(), 1000);
   for (let seq = 0; seq < 100; seq++) room.enqueue('b', [input({ seq, forward: 1, fire: true, time: 1000 + seq / 60 })], 1000 + seq / 60);
   assert.equal(target.ack, 99); assert.equal(room.runtime.get('b')!.queue.length, 0);
-  room.tick(1002.51); assert.equal(room.runtime.get('b')!.queue.length, 0); assert.equal(room.players.get('b')!.ack, 99); assert.equal(room.players.get('b')!.ammo[0], 5);
+  room.tick(1005.01); assert.equal(room.runtime.get('b')!.queue.length, 0); assert.equal(room.players.get('b')!.ack, 99); assert.equal(room.players.get('b')!.ammo[0], 5);
 });
 test('a late human replaces a bot in a full live match and inherits the requested loadout', () => {
   const game = new GameServer(); game.connect(() => {}, 'a'); game.connect(() => {}, 'b');

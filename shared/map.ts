@@ -1,10 +1,15 @@
 import type { Box, Vec3 } from './types.ts';
+import { createHomesteadGeometry } from './homestead.ts';
 
-export type MapId = 'yard' | 'foundry' | 'relay' | 'bazaar' | 'harbor' | 'citadel' | 'junction' | 'oasis' | 'overpass' | 'canal' | 'crossfire' | 'hangar' | 'quarry' | 'outpost' | 'gardens' | 'vault' | 'terminal' | 'switchback';
+export type MapId = 'yard' | 'foundry' | 'relay' | 'bazaar' | 'harbor' | 'citadel' | 'junction' | 'oasis' | 'overpass' | 'canal' | 'crossfire' | 'hangar' | 'quarry' | 'outpost' | 'gardens' | 'vault' | 'terminal' | 'switchback' | 'airfield' | 'homestead' | 'derrick';
+export interface MapRegion { x: number; z: number; w: number; d: number }
 export interface MapDefinition {
   id: MapId; name: string; subtitle: string; size: number; boxes: Box[]; spawns: Vec3[];
   teamSpawns: { red: Vec3[]; blue: Vec3[] };
   flagBases: { red: Vec3; blue: Vec3 };
+  footprint?: MapRegion[];
+  outline?: {x:number;z:number}[];
+  architecture?: 'airport' | 'suburb' | 'rig';
   theme: { sky: number; ground: number; fog: number; sun: number; steel: number; accent: number };
 }
 
@@ -344,12 +349,157 @@ const switchback=arena('switchback','Switchback','Staggered walls with fast diag
     ]),solid(0,0,2,2,1.3,'crate'),
   ]);
 
-export const MAPS: readonly MapDefinition[] = [yard,foundry,relay,bazaar,harbor,citadel,junction,oasis,overpass,canal,crossfire,hangar,quarry,outpost,gardens,vault,terminal,switchback];
+// A footprint is a union of ground rectangles, independent of the minimap's
+// enclosing square. The same outline drives visible walls, collision and bots.
+export function sceneryInnerRadius(map:MapDefinition):number { return Math.max(62,Math.SQRT1_2*map.size+12); }
+export function containsMapPosition(map:MapDefinition,x:number,z:number,padding=0):boolean {
+  if(!map.footprint)return Math.abs(x)<=map.size/2-padding&&Math.abs(z)<=map.size/2-padding;
+  const inside=(px:number,pz:number)=>map.footprint!.some(r=>Math.abs(px-r.x)<=r.w/2+1e-7&&Math.abs(pz-r.z)<=r.d/2+1e-7);
+  return inside(x,z)&&[-1,1].every(sx=>[-1,1].every(sz=>inside(x+sx*padding,z+sz*padding)));
+}
+function shapedArena(id:MapId,name:string,subtitle:string,size:number,architecture:NonNullable<MapDefinition['architecture']>,footprint:MapRegion[],outline:number[][],red:Vec3,blue:Vec3,theme:MapDefinition['theme']):MapDefinition {
+  const points=outline.map(([x,z])=>({x,z}));
+  const boxes:Box[]=points.map((a,i)=>{
+    const b=points[(i+1)%points.length],horizontal=a.z===b.z;
+    return {x:(a.x+b.x)/2,y:2.5,z:(a.z+b.z)/2,w:horizontal?Math.abs(a.x-b.x)+.6:.6,h:5,d:horizontal?.6:Math.abs(a.z-b.z)+.6,kind:'perimeter'};
+  });
+  return {id,name,subtitle,size,architecture,footprint,outline:points,boxes,spawns:[],teamSpawns:{red:[],blue:[]},flagBases:{red,blue},theme};
+}
+const airfield=shapedArena('airfield','Airfield','Connected terminal lounges, a live aircraft cabin, and exposed apron',100,'airport',[
+  {x:-18,z:-6,w:40,d:80},{x:21,z:19,w:38,d:30},
+],[[-38,-46],[2,-46],[2,4],[40,4],[40,34],[-38,34]],v(-18,-38),v(30,22),
+ {sky:0xc0d4de,ground:0x9aa7a8,fog:.0038,sun:0xe8f2ff,steel:0x526d7e,accent:0xe4b953});
+const a=(x:number,z:number,w:number,d:number,h:number,kind='terminal-wall',color=0xb9c7cc,y=h/2)=>airfield.boxes.push({x,y,z,w,h,d,kind,color});
+// Shop interiors connect the concourse to a narrow rear shortcut. Their
+// storefronts and back doors are genuine gaps in shared collision geometry.
+for(const z of [-26,-5,16]) {
+ for(const end of [-1,1])a(-32,z+end*5.5,8,.3,3.6,'shop-wall',0xaebac3);
+ for(const end of [-1,1])a(-36,z+end*3.7,.3,3.6,3.6,'shop-wall',0xaebac3);
+ a(-32,z,8.2,11.2,.25,'shop-roof',0xc0c6bd,3.725);
+ a(-33,z+2,4,.7,1.15,'counter',0xb5c4c6);
+ a(-4,z,6,5,1.25,'counter',0x547380);
+}
+// A raised dining lounge has an interior stair and open balconies facing the
+// lower concourse. The lower cafe stays passable under the lounge floor.
+a(-18,-8,13,13,.3,'deck',0xa6b4b9,3.05);
+for(const x of [-23.7,-12.3])for(const z of [-13.7,-2.3])a(x,z,.32,.32,2.9,'column',0xaebdc3);
+for(let i=0;i<10;i++)a(-24.4,-22.2+i*.78,2,.8,(i+1)*.32,'stairs',0x69828a);
+a(-22.9,-14.4,4.2,1.8,.3,'deck',0xa6b4b9,3.05);
+a(-11.55,-8,.12,13,1.05,'rail',0xd5b264,3.725);
+a(-18,-1.55,13,.12,1.05,'rail',0xd5b264,3.725);
+for(const x of [-21,-16])a(x,-7,2,1.2,1.05,'counter',0x7f999d);
+a(-20,-11,4,1,1.05,'bench',0x547887,3.725);
+a(-15,-4,4,1,1.05,'bench',0x547887,3.725);
+a(-23,-25,7,1,1.15,'counter',0xb5c4c6);a(-11,-21,7,1,1.15,'counter',0xb5c4c6);
+a(-22,9,6,1,1.1,'bench',0x547887);a(-10,17,6,1,1.1,'bench',0x547887);
+a(-18,-26,23,25,.35,'terminal-roof',0xb4c3c7,7.2);
+a(-18,15,23,21,.35,'terminal-roof',0xb4c3c7,7.2);
+for(const z of [-36,-16,6,24])for(const x of [-28,-8])a(x,z,.45,.45,7,'column',0xaebdc3);
+// The boarding bridge leads directly into the aircraft's front cabin door.
+a(7.75,10,25.1,2.4,.3,'jetbridge-floor',0xa6b4b9,2.25);
+for(let i=0;i<8;i++)a(-11.3+i*.8,10,.82,2.2,(i+1)*.3,'stairs',0x69828a);
+a(7.75,8.85,25.1,.16,1.05,'rail',0xd5b264,2.925);
+a(7.75,11.15,25.1,.16,1.05,'rail',0xd5b264,2.925);
+// Full playable fuselage: cockpit, two seat rows, a clear center aisle, doors
+// onto the boarding bridge, both wings and the rear apron staircase.
+a(23,18,5.4,26,.24,'plane-floor',0x899ca5,2.28);
+for(const side of [-1,1]) {
+ const doors=side<0?[[8.6,11.4],[15.6,18.4]]:[[15.6,18.4],[26.6,29.4]];
+ const spans:number[][]=[];let start=5;
+ for(const [lo,hi] of doors){if(lo>start)spans.push([start,lo]);start=hi;}if(start<31)spans.push([start,31]);
+ for(const [lo,hi] of spans){
+  a(23+side*2.7,(lo+hi)/2,.22,hi-lo,1.1,'plane-wall',0xd9ded7,2.95);
+  a(23+side*2.7,(lo+hi)/2,.22,hi-lo,.3,'plane-header',0xd9ded7,4.4);
+  for(let z=lo+.1;z<hi;z+=1.35)a(23+side*2.7,z,.23,.12,.78,'plane-frame',0xd9ded7,3.88);
+ }
+ for(const [lo,hi] of doors)for(const z of [lo,hi])a(23+side*2.7,z,.24,.15,2.1,'plane-frame',0xd9ded7,3.45);
+ for(const z of [12.8,14.2,20.2,21.6,23,24.4])a(23+side*1.65,z,1.1,.7,1.12,'plane-seat',0x496978,2.96);
+}
+for(const x of [20.95,25.05])a(x,18,.68,25,.38,'plane-bin',0xd8dbd2,4.72);
+for(let i=0;i<10;i++) {const x=-2.7+(i+.5)*.54,roof=4.4+Math.sqrt(1-(x/2.7)**2)*1.1;a(23+x,18,.56,26,.2,'plane-roof',0xd9ded7,roof);}
+a(23,5,5.4,.2,1.15,'plane-wall',0xd9ded7,2.975);
+a(23,5,5.4,.2,.95,'plane-glass',0x486e83,4.025);
+a(23,31,5.4,.2,2.2,'plane-wall',0xd9ded7,3.5);
+a(23,6.1,3.4,.65,.6,'console',0x4c6573,2.7);
+a(24.5,7,1,.7,1.1,'plane-seat',0x496978,2.95);
+a(23,17,27,2.6,.2,'plane-wing',0xaabdc3,2.3);
+a(23,29.4,11,2,.2,'plane-wing',0xaabdc3,4.6);
+// The rear exit descends sideways, so both the cabin and apron have loops.
+for(let i=0;i<8;i++)a(31.8-i*.76,28, .78,2.2,(i+1)*.3,'stairs',0x748b95);
+for(const x of [21.3,24.7])for(const z of [9,26])a(x,z,.28,.4,2.2,'plane-gear',0x50626b);
+for(const x of [16,30])a(x,17,1.36,3.2,1.36,'plane-engine',0x667f87,1.45);
+a(10,25,6,2.3,1.2,'baggage',0x709197);a(33,10,4,2.3,1.2,'baggage',0x709197);
+a(1,29,6,1.2,1.25,'counter',0xb4c1c1);
+
+const homestead=shapedArena('homestead','Homestead','Two-story homes, backyard loops, and an enterable bus and truck',88,'suburb',[
+  {x:0,z:-25,w:62,d:30},{x:0,z:0,w:40,d:20},{x:0,z:25,w:62,d:30},
+],[[-31,-40],[31,-40],[31,-10],[20,-10],[20,10],[31,10],[31,40],[-31,40],[-31,10],[-20,10],[-20,-10],[-31,-10]],v(0,-34),v(0,34),
+ {sky:0xc8d7e0,ground:0x9eac8d,fog:.0035,sun:0xffedcf,steel:0x687d80,accent:0xe3c78b});
+const h=(x:number,z:number,w:number,d:number,height:number,kind='house-wall',color=0xc9c3ab,y=height/2)=>homestead.boxes.push({x,y,z,w,h:height,d,kind,color});
+homestead.boxes.push(...createHomesteadGeometry());
+for(const s of [-1,1]) {
+ h(-s*23,s*15,10,1.2,1.2,'hedge',0x648158);
+ h(s*9,s*8,7,1,1.15,'fence',0xd6cfb6);
+}
+h(-13,0,1,7,1.1,'fence',0xd6cfb6);h(14,-4,1,5,1.1,'fence',0xd6cfb6);
+
+const derrick=shapedArena('derrick','Derrick','Raised earth, low service routes, and a two-level drilling rig',88,'rig',[
+ {x:0,z:-24,w:68,d:24},{x:0,z:14,w:34,d:52},
+],[[-34,-36],[34,-36],[34,-12],[17,-12],[17,40],[-17,40],[-17,-12],[-34,-12]],v(0,-29),v(0,33),
+ {sky:0xd8c7a6,ground:0xbba47d,fog:.0042,sun:0xffe1b3,steel:0x62705d,accent:0xcf9f46});
+const d=(x:number,z:number,w:number,depth:number,height:number,kind='container',color=0x867454,y=height/2)=>derrick.boxes.push({x,y,z,w,h:height,d:depth,kind,color});
+for(const s of [-1,1]) {
+ d(s*22,-23,9,3,2.8,'container',s<0?0x99563c:0x658084);
+ d(s*27,-16,3,7,2.8,'container',0x788574);
+ d(s*11,18,3.2,8,3.1,'tank',0xb3a180);
+ d(s*11,-3,3,5,2.2,'generator',0x748271);
+ d(s*5,-18,4,1,1.2,'barrier');d(s*6,25,4,1,1.25,'barrier');
+}
+d(0,4,9,10,.32,'deck',0x6b7764,3.04);
+d(1,4,6,7,.32,'deck',0x6b7764,6.04);
+for(const x of [-4,4])for(const z of [0,8])d(x,z,.32,.32,6,'steel',0xb59b4f);
+for(let i=0;i<10;i++)d(2.8,15-i*.7,1.8,.72,(i+1)*.32,'stairs',0x75806b);
+for(let i=0;i<10;i++)d(-2.4,7.5-i*.65,1.8,.67,(i+1)*.3,'stairs',0x75806b,3.2+(i+1)*.15);
+d(-2.7,.8,2,.6,.32,'deck',0x6b7764,6.04);
+d(0,8.9,4,.12,1.05,'rail',0xcfa34e,3.725);
+d(4.4,4,.12,10,1.05,'rail',0xcfa34e,3.725);
+d(-4.4,4,.12,10,1.05,'rail',0xcfa34e,3.725);
+d(3.9,4,.12,7,1.05,'rail',0xcfa34e,6.725);
+d(0,4,2.4,2.2,2,'generator',0x62756a);
+for(const side of [-1,1])for(let i=0;i<3;i++)d(side*14,10,.44,9,.44,'pipe',0x9a7251,1+i*.6);
+// Raised earth shoulders make the center service lane a shallow trench. Wide
+// twenty-centimeter terraces behave as slopes in shared fixed-step movement.
+for(const side of [-1,1]){
+ const levels=side<0?9:6,height=levels*.2;
+ d(side*11,-6,8,8,height,'terrain',side<0?0xa8906d:0xbba17a);
+ for(let i=0;i<levels;i++)d(side*11,(levels-1-i)*1.2-1.4,8,1.24,(i+1)*.2,'terrain-step',0xb69c75);
+ for(const box of derrick.boxes)if(box.kind==='generator'&&box.x===side*11)box.y+=height;
+}
+
+
+function prepareShapedSpawns(map:MapDefinition) {
+ const clear=(p:Vec3)=>containsMapPosition(map,p.x,p.z,1)&&!map.boxes.some(b=>b.y-b.h/2<1.75&&b.y+b.h/2>0&&Math.abs(p.x-b.x)<b.w/2+.65&&Math.abs(p.z-b.z)<b.d/2+.65);
+ const candidates:Vec3[]=[];
+ for(let z=-map.size/2+2;z<map.size/2-1;z+=2)for(let x=-map.size/2+2;x<map.size/2-1;x+=2) {const p=v(x,z);if(clear(p))candidates.push(p);}
+ for(const team of ['red','blue'] as const){
+  const home=map.flagBases[team],other=map.flagBases[team==='red'?'blue':'red'];
+  const ordered=candidates.filter(p=>Math.hypot(p.x-home.x,p.z-home.z)>2&&Math.hypot(p.x-home.x,p.z-home.z)<Math.hypot(p.x-other.x,p.z-other.z)).sort((a,b)=>Math.hypot(a.x-home.x,a.z-home.z)-Math.hypot(b.x-home.x,b.z-home.z));
+  for(const p of ordered)if(map.teamSpawns[team].every(other=>Math.hypot(other.x-p.x,other.z-p.z)>=2.2)){map.teamSpawns[team].push(p);if(map.teamSpawns[team].length===16)break;}
+ }
+ // Farthest-point sampling spreads FFA starts throughout every route rather
+ // than reusing two tightly clustered team deployment zones.
+ const pool=[...candidates];map.spawns.push({...map.flagBases.red});
+ while(map.spawns.length<32&&pool.length){let best=0,distance=-1;for(let i=0;i<pool.length;i++){const nearest=Math.min(...map.spawns.map(p=>Math.hypot(pool[i].x-p.x,pool[i].z-p.z)));if(nearest>distance){distance=nearest;best=i;}}map.spawns.push(pool.splice(best,1)[0]);}
+}
+for(const map of [airfield,homestead,derrick])prepareShapedSpawns(map);
+
+export const MAPS: readonly MapDefinition[] = [yard,foundry,relay,bazaar,harbor,citadel,junction,oasis,overpass,canal,crossfire,hangar,quarry,outpost,gardens,vault,terminal,switchback,airfield,homestead,derrick];
 // Every arena needs at least thirty-two separated FFA starts for a full deployment.
 for(const map of MAPS) {
   const candidates=[...map.teamSpawns.red,...map.teamSpawns.blue];
-  for(const spawn of candidates.filter(p=>map.spawns.every(other=>Math.hypot(p.x-other.x,p.z-other.z)>1.2))) map.spawns.push(spawn);
+  if(map.spawns.length<32)for(const spawn of candidates.filter(p=>map.spawns.every(other=>Math.hypot(p.x-other.x,p.z-other.z)>1.2))) map.spawns.push(spawn);
   for(const side of [-1,1])for(let i=0;i<3;i++) {
+    if(map.footprint)continue;
     map.boxes.push({x:side*(map.size/2-2.1),y:.475,z:side*(map.size/2-9)+i*.74,w:.62,h:.95,d:.62,kind:'barrel'});
   }
 }

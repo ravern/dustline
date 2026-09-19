@@ -21,7 +21,7 @@ try{
  await check('Fresh clients have no assigned name and blank callsigns cannot create a room',async()=>{assert.equal(await a.page.locator('#callsign').inputValue(),'');await a.page.locator('#create-lobby').click();assert.equal((await state(a.page)).room,undefined);assert.match(await a.page.locator('#toast').textContent(),/callsign/);});
  await check('Personal keyboard and mouse bindings persist and do not change another player',async()=>{
   await a.page.locator('#settings-button').click();await a.page.locator('#keybind-settings summary').click();
-  assert.equal(await a.page.locator('[data-bind]').count(),17);
+  assert.equal(await a.page.locator('[data-bind]').count(),19);
   await a.page.locator('[data-bind="forward"]').click();await a.page.keyboard.press('i');
   assert.equal(await a.page.locator('[data-bind="forward"]').textContent(),'I');
   await a.page.locator('[data-bind="jump"]').click();await a.page.keyboard.press('i');
@@ -67,7 +67,7 @@ try{
   // Open settings while playing. Movement and scoreboard keys must not reach the match.
   await a.page.keyboard.press('b');assert.equal(await a.page.locator('#scoreboard').isVisible(),false);
   await a.page.locator('#reset-bindings').click();await a.page.locator('#settings-done').click();await a.page.locator('#quit-match').click();
-  await wait(a.page,()=>!window.__dustline.state.room);return {actions:17,persisted:true,independent:true,realInput:true};
+  await wait(a.page,()=>!window.__dustline.state.room);return {actions:19,persisted:true,independent:true,realInput:true};
  });
  await a.page.locator('#callsign').fill('TEAM ALPHA');await b.page.locator('#callsign').fill('TEAM BRAVO');
  await check('Host chooses Foundry TDM; guests see the same settings and 32-player capacity',async()=>{
@@ -119,7 +119,7 @@ try{
   const maps=[];
   for(const map of ['bazaar','harbor','citadel','junction','oasis','overpass','canal','crossfire','hangar','quarry','outpost','gardens','vault','terminal','switchback']){
    await a.page.locator('#create-lobby').click();await wait(a.page,()=>!!window.__dustline.state.room);
-   assert.equal(await a.page.locator('#map-select option').count(),18);
+   assert.equal(await a.page.locator('#map-select option').count(),21);
    await a.page.locator('#map-select').selectOption(map);await wait(a.page,id=>window.__dustline.state.room.map===id,map);
    await a.page.locator('#bot-count').selectOption('31');await wait(a.page,()=>window.__dustline.state.room.bots===31);
    await a.page.locator('#start-match').click();await wait(a.page,id=>window.__dustline.state.map===id&&window.__dustline.state.phase==='playing',map);

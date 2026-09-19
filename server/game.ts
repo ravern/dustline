@@ -4,7 +4,8 @@ import { route } from './navigation.ts';
 import { MODES } from '../shared/types.ts';
 import { bodyHeight, DT, eyeHeight, move, spawnBody } from '../shared/physics.ts';
 import { WEAPONS, weaponForSlot } from '../shared/weapons.ts';
-import type { Body, Box, ClientMessage, GameEvent, Input, Loadout, LobbyPlayer, PlayerState, RoomInfo, ServerMessage, Slot, Vec3, Team, GameMode, FlagState, Snapshot } from '../shared/types.ts';
+import { advanceGrenade, FLASH_RADIUS, FRAG_RADIUS, GRENADE_FUSE } from './grenades.ts';
+import type { Body, Box, ClientMessage, GameEvent, GrenadeKind, GrenadeState, Input, Loadout, LobbyPlayer, PlayerState, RoomInfo, ServerMessage, Slot, Vec3, Team, GameMode, FlagState, Snapshot } from '../shared/types.ts';
 
 const clockEpoch = Date.now() / 1000 - performance.now() / 1000;
 export const clock = () => clockEpoch + performance.now() / 1000;
@@ -12,14 +13,16 @@ export const RECONNECT_GRACE = 20;
 export const FLAG_RETURN_TIME = 20;
 export const MAX_REWIND = .4;
 export const MAX_COMMAND_CREDIT = 8;
+export const RESPAWN_DELAY = 5;
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const distance = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+const copyBody = (body: Body): Body => ({ ...body, ...(body.vault ? { vault: { ...body.vault, from: { ...body.vault.from }, to: { ...body.vault.to } } } : {}) });
 const teams: Team[] = ['red', 'blue'];
 const isMode = (value: unknown): value is GameMode => typeof value === 'string' && Object.hasOwn(MODES, value);
 const isMap = (value: unknown): value is MapId => typeof value === 'string' && MAPS.some(map => map.id === value);
 function cleanLoadout(value: unknown): Loadout {
   const l = value as Loadout | undefined;
-  return { primary: l && ['intervention', 'ak47', 'scar'].includes(l.primary) ? l.primary : 'intervention', secondary: 'm9' };
+  return { primary: l && ['intervention', 'ak47', 'scar'].includes(l.primary) ? l.primary : 'intervention', secondary: l && ['m9', 'deagle', 'glock'].includes(l.secondary) ? l.secondary : 'm9' };
 }
 function cleanName(value: unknown) {
   const name = typeof value === 'string' ? value.replace(/[<>\x00-\x1f\x7f]/g, '').trim().slice(0, 20) : '';
@@ -33,7 +36,7 @@ export function validInput(raw: unknown): Input | null {
   if (!v || !Number.isSafeInteger(v.seq) || v.seq < 0 || ![v.yaw, v.pitch, v.forward, v.right, v.time].every(finite) || ![0, 1, 2].includes(v.slot)) return null;
   if (Math.abs(v.yaw) > 1e7 || Math.abs(v.time) > 1e12) return null;
   if (v.viewTime !== undefined && (!finite(v.viewTime) || Math.abs(v.viewTime) > 1e12)) return null;
-  return { seq: v.seq, yaw: v.yaw % (Math.PI * 2), pitch: clamp(v.pitch, -1.48, 1.48), forward: clamp(v.forward, -1, 1), right: clamp(v.right, -1, 1), jump: v.jump === true, sprint: v.sprint === true, crouch: v.crouch === true, ads: v.ads === true, fire: v.fire === true, reload: v.reload === true, slot: v.slot, time: v.time, ...(v.viewTime === undefined ? {} : { viewTime: Math.min(v.time, v.viewTime) }), ...(typeof v.matchId === 'string' ? { matchId: v.matchId.slice(0, 64) } : {}) };
+  return { seq: v.seq, yaw: v.yaw % (Math.PI * 2), pitch: clamp(v.pitch, -1.48, 1.48), forward: clamp(v.forward, -1, 1), right: clamp(v.right, -1, 1), jump: v.jump === true, sprint: v.sprint === true, crouch: v.crouch === true, ads: v.ads === true, fire: v.fire === true, reload: v.reload === true, frag: v.frag === true, flash: v.flash === true, slot: v.slot, time: v.time, ...(v.viewTime === undefined ? {} : { viewTime: Math.min(v.time, v.viewTime) }), ...(typeof v.matchId === 'string' ? { matchId: v.matchId.slice(0, 64) } : {}) };
 }
 /** Ray/AABB intersection distance. Returns null when the box isn't in front of the ray. */
 export function rayBox(origin: Vec3, direction: Vec3, box: Box): number | null {
@@ -52,7 +55,7 @@ export function worldDistance(origin: Vec3, dir: Vec3, maxDistance: number, map:
   return nearest;
 }
 interface History { time: number; body: Body; hp: number; protectedUntil: number }
-interface Runtime { queue: Input[]; last: Input; maxSeq: number; lastReceive: number; commandCredit: number; fireHeld: boolean; reloadHeld: boolean; history: History[]; botGoal: Vec3; botThink: number; botStrafe: number; botSeq: number; lastPosition: Vec3; stuck: number; path: Vec3[]; pathTarget: Vec3; pathAt: number; recoveringUntil: number; droppedAck: number }
+interface Runtime { queue: Input[]; last: Input; maxSeq: number; lastReceive: number; commandCredit: number; fireHeld: boolean; reloadHeld: boolean; fragHeld: boolean; flashHeld: boolean; history: History[]; botGoal: Vec3; botThink: number; botStrafe: number; botSeq: number; botTarget: string | null; botAcquireAt: number; botAimAt: number; botAim: Vec3; botErrorYaw: number; botErrorPitch: number; botBurstUntil: number; botRestUntil: number; lastPosition: Vec3; stuck: number; path: Vec3[]; pathTarget: Vec3; pathAt: number; recoveringUntil: number; droppedAck: number }
 export interface Peer { id: string; token: string; connected: boolean; expiresAt: number; send: (message: ServerMessage) => void; close?: () => void; room?: Room; window: number; messages: number }
 
 export class Room {
@@ -73,6 +76,7 @@ export class Room {
   winner: string | null = null;
   teamScores: Record<Team, number> = { red: 0, blue: 0 };
   flags: FlagState[] = [];
+  readonly grenades = new Map<string, GrenadeState>();
   get arena() { return getMap(this.map); }
   get maxPlayers() { return MODES[this.mode].maxPlayers; }
   assignTeam(): Team | null {
@@ -144,16 +148,16 @@ export class Room {
     const old = this.players.get(id);
     const weapons = ([0, 1, 2] as Slot[]).map(slot => WEAPONS[weaponForSlot(member.loadout, slot)]);
     const body = spawnBody(spawn, Math.atan2(spawn.x, spawn.z));
-    const player: PlayerState = { id, name: member.name, bot, team: member.team, captures: old?.captures || 0, body, hp: 100, kills: old?.kills || 0, deaths: old?.deaths || 0, loadout: { ...member.loadout }, slot: 0, ammo: weapons.map(w => w.mag), reserve: weapons.map(w => w.reserve), reloading: 0, nextFire: now + .25, ads: false, adsSince: 0, ack: old?.ack ?? -1, respawnAt: 0, protectedUntil: now + 1.2, lastDamage: 0 };
+    const player: PlayerState = { id, name: member.name, bot, team: member.team, captures: old?.captures || 0, body, hp: 100, kills: old?.kills || 0, deaths: old?.deaths || 0, loadout: { ...member.loadout }, slot: 0, ammo: weapons.map(w => w.mag), reserve: weapons.map(w => w.reserve), reloading: 0, nextFire: now + .25, ads: false, adsSince: 0, ack: old?.ack ?? -1, respawnAt: 0, protectedUntil: now + 1.2, lastDamage: 0, grenades: { frag: 1, flash: 1 }, nextGrenade: now, flashUntil: 0, flashStrength: 0 };
     this.players.set(id, player);
     const previousRuntime = this.runtime.get(id);
-    this.runtime.set(id, { queue: [], last: { ...idleInput(), yaw: body.yaw }, maxSeq: previousRuntime?.maxSeq ?? -1, lastReceive: now, commandCredit: 0, fireHeld: false, reloadHeld: false, history: [], botGoal: this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)], botThink: 0, botStrafe: Math.random() > .5 ? 1 : -1, botSeq: previousRuntime?.botSeq || 0, lastPosition: spawn, stuck: 0, path: [], pathTarget: spawn, pathAt: 0, recoveringUntil: 0, droppedAck: -1 });
+    this.runtime.set(id, { queue: [], last: { ...idleInput(), yaw: body.yaw }, maxSeq: previousRuntime?.maxSeq ?? -1, lastReceive: now, commandCredit: 0, fireHeld: false, reloadHeld: false, fragHeld: previousRuntime?.fragHeld ?? false, flashHeld: previousRuntime?.flashHeld ?? false, history: [], botGoal: this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)], botThink: 0, botStrafe: Math.random() > .5 ? 1 : -1, botSeq: previousRuntime?.botSeq || 0, botTarget: null, botAcquireAt: 0, botAimAt: 0, botAim: spawn, botErrorYaw: 0, botErrorPitch: 0, botBurstUntil: 0, botRestUntil: 0, lastPosition: spawn, stuck: 0, path: [], pathTarget: spawn, pathAt: 0, recoveringUntil: 0, droppedAck: -1 });
     return player;
   }
   start(now: number) {
     if (this.state !== 'lobby') throw new Error('This match has already started.');
     if ([...this.members.values()].some(p => !p.bot && (!p.ready || !p.connected))) throw new Error('Every operator must select Ready before deployment.');
-    this.players.clear(); this.runtime.clear(); this.events.length = 0;
+    this.players.clear(); this.runtime.clear(); this.grenades.clear(); this.events.length = 0;
     for (const id of [...this.members.keys()]) if (this.members.get(id)!.bot) this.members.delete(id);
     const humans = this.members.size;
     for (let i = 0; i < Math.min(this.bots, this.maxPlayers - humans); i++) {
@@ -170,7 +174,7 @@ export class Room {
   }
   returnToLobby() {
     if (this.state === 'playing') throw new Error('The match is still in progress.');
-    this.state = 'lobby'; this.players.clear(); this.runtime.clear(); this.events.length = 0; this.endsAt = 0; this.flags = []; this.teamScores = { red: 0, blue: 0 }; this.winner = null;
+    this.state = 'lobby'; this.players.clear(); this.runtime.clear(); this.grenades.clear(); this.events.length = 0; this.endsAt = 0; this.flags = []; this.teamScores = { red: 0, blue: 0 }; this.winner = null;
     for (const [id, member] of this.members) { if (member.bot) this.members.delete(id); else member.ready = id === this.host; }
     this.publish();
   }
@@ -187,7 +191,7 @@ export class Room {
       }
       rt.maxSeq = input.seq; rt.lastReceive = now;
       const player = this.players.get(id);
-      if (player && player.hp <= 0) { player.ack = input.seq; rt.queue.length = 0; }
+      if (player && player.hp <= 0) { player.ack = input.seq; rt.queue.length = 0; rt.fragHeld = input.frag === true; rt.flashHeld = input.flash === true; }
       else rt.queue.push(input);
     }
   }
@@ -253,9 +257,74 @@ export class Room {
     const t = b.time > a.time ? clamp((time - a.time) / (b.time - a.time), 0, 1) : 0;
     return { ...a, body: { ...a.body, x: a.body.x + (b.body.x - a.body.x) * t, y: a.body.y + (b.body.y - a.body.y) * t, z: a.body.z + (b.body.z - a.body.z) * t } };
   }
+  damage(target: PlayerState, attacker: { id: string; team: Team | null }, amount: number, now: number, detail: Pick<GameEvent, 'weapon' | 'grenade' | 'headshot' | 'quickscope'>) {
+    if (this.state !== 'playing' || target.hp <= 0 || target.protectedUntil > now || amount <= 0) return;
+    const self = target.id === attacker.id;
+    if (!self && this.mode !== 'ffa' && target.team === attacker.team) return;
+    const damage = Math.round(amount);
+    target.hp = Math.max(0, target.hp - damage); target.lastDamage = now;
+    this.event({ type: 'hit', player: attacker.id, target: target.id, damage, ...detail, time: now });
+    if (target.hp > 0) return;
+    const targetRuntime = this.runtime.get(target.id);
+    if (targetRuntime?.queue.length) { target.ack = targetRuntime.queue.at(-1)!.seq; targetRuntime.queue.length = 0; }
+    const killer = this.players.get(attacker.id);
+    if (!self && killer) killer.kills++;
+    target.deaths++; target.respawnAt = now + RESPAWN_DELAY; target.reloading = 0; target.ads = false;
+    this.event({ type: 'kill', player: attacker.id, target: target.id, damage, ...detail, time: now });
+    this.dropFlags(target.id, now);
+    if (!self && this.mode === 'tdm' && attacker.team) this.teamScores[attacker.team]++;
+    if ((!self && this.mode === 'ffa' && killer && killer.kills >= this.limit) || (this.mode === 'tdm' && attacker.team && this.teamScores[attacker.team] >= this.limit)) this.finish(now);
+  }
+  throwGrenade(player: PlayerState, kind: GrenadeKind, now: number) {
+    if (this.state !== 'playing' || player.hp <= 0 || player.body.vault || player.nextGrenade > now || player.grenades[kind] <= 0) return false;
+    player.grenades[kind]--; player.nextGrenade = now + .65;
+    player.nextFire = Math.max(player.nextFire, now + .45); player.protectedUntil = 0; player.reloading = 0; player.ads = false;
+    const b = player.body, pitch = b.pitch;
+    const grenade: GrenadeState = {
+      id: randomUUID(), kind, owner: player.id, team: player.team,
+      position: { x: b.x, y: b.y + eyeHeight(b) - .1, z: b.z },
+      velocity: { x: -Math.sin(b.yaw) * Math.cos(pitch) * 14 + b.vx * .25, y: Math.sin(pitch) * 14 + 4 + b.vy * .25, z: -Math.cos(b.yaw) * Math.cos(pitch) * 14 + b.vz * .25 },
+      thrownAt: now, detonateAt: now + GRENADE_FUSE[kind],
+    };
+    this.grenades.set(grenade.id, grenade);
+    this.event({ type: 'grenade_throw', player: player.id, grenade: kind, grenadeId: grenade.id, from: { ...grenade.position }, time: now });
+    return true;
+  }
+  explodeGrenade(grenade: GrenadeState, now: number) {
+    // Remove before applying damage: finish() can immediately broadcast a snapshot.
+    if (!this.grenades.delete(grenade.id)) return;
+    this.event({ type: 'grenade_explode', player: grenade.owner, grenade: grenade.kind, grenadeId: grenade.id, from: { ...grenade.position }, time: now });
+    for (const target of this.players.values()) {
+      if (this.state !== 'playing') break;
+      if (target.hp <= 0 || target.protectedUntil > now || (target.id !== grenade.owner && this.mode !== 'ffa' && target.team === grenade.team)) continue;
+      const point = { x: target.body.x, y: target.body.y + (grenade.kind === 'flash' ? eyeHeight(target.body) : bodyHeight(target.body) * .55), z: target.body.z };
+      const d = distance(grenade.position, point), radius = grenade.kind === 'frag' ? FRAG_RADIUS : FLASH_RADIUS;
+      if (d >= radius) continue;
+      const dir = { x: (point.x - grenade.position.x) / Math.max(d, .001), y: (point.y - grenade.position.y) / Math.max(d, .001), z: (point.z - grenade.position.z) / Math.max(d, .001) };
+      if (d > .001 && worldDistance(grenade.position, dir, d, this.arena) < d - .01) continue;
+      if (grenade.kind === 'frag') {
+        this.damage(target, { id: grenade.owner, team: grenade.team }, 140 * Math.min(1, (FRAG_RADIUS - d) / (FRAG_RADIUS - 2)), now, { grenade: 'frag' });
+      } else {
+        const b = target.body, facing = Math.sin(b.yaw) * Math.cos(b.pitch) * dir.x - Math.sin(b.pitch) * dir.y + Math.cos(b.yaw) * Math.cos(b.pitch) * dir.z;
+        const strength = clamp((1 - d / FLASH_RADIUS) * (.2 + .8 * clamp((facing + .2) / 1.2, 0, 1)), 0, 1);
+        const duration = .4 + strength * 3.6;
+        // A weaker second flash must not shorten or reset a stronger active one.
+        target.flashStrength = Math.max(now < target.flashUntil ? target.flashStrength : 0, strength);
+        target.flashUntil = Math.max(target.flashUntil, now + duration);
+        this.event({ type: 'flash', player: grenade.owner, target: target.id, grenade: 'flash', grenadeId: grenade.id, strength, duration, time: now });
+      }
+    }
+  }
+  updateGrenades(now: number) {
+    for (const grenade of this.grenades.values()) {
+      if (this.state !== 'playing') break;
+      if (now >= grenade.detonateAt) this.explodeGrenade(grenade, now);
+      else advanceGrenade(grenade, DT, this.arena);
+    }
+  }
   shoot(player: PlayerState, input: Input, now: number) {
     const weaponId = weaponForSlot(player.loadout, player.slot), weapon = WEAPONS[weaponId];
-    if (player.hp <= 0 || player.reloading > now || player.nextFire > now || (weaponId !== 'knife' && player.ammo[player.slot] <= 0)) return false;
+    if (this.state !== 'playing' || player.hp <= 0 || player.body.vault || player.reloading > now || player.nextFire > now || (weaponId !== 'knife' && player.ammo[player.slot] <= 0)) return false;
     player.nextFire = now + weapon.fireInterval;
     if (weaponId !== 'knife') player.ammo[player.slot]--;
     player.protectedUntil = 0;
@@ -286,18 +355,8 @@ export class Room {
     this.event({ type: 'shot', player: player.id, weapon: weaponId, from, to, time: now });
     if (target) {
       const damage = Math.round(weapon.damage * (headshot ? weapon.headMultiplier : 1));
-      target.hp = Math.max(0, target.hp - damage); target.lastDamage = now;
       const quickscope = weaponId === 'intervention' && scoped && now - player.adsSince <= .6;
-      this.event({ type: 'hit', player: player.id, target: target.id, weapon: weaponId, damage, headshot, quickscope, time: now });
-      if (target.hp === 0) {
-        const targetRuntime = this.runtime.get(target.id);
-        if (targetRuntime?.queue.length) { target.ack = targetRuntime.queue.at(-1)!.seq; targetRuntime.queue.length = 0; }
-        player.kills++; target.deaths++; target.respawnAt = now + 2.5; target.reloading = 0; target.ads = false;
-        this.event({ type: 'kill', player: player.id, target: target.id, weapon: weaponId, damage, headshot, quickscope, time: now });
-        this.dropFlags(target.id, now);
-        if (this.mode === 'tdm' && player.team) this.teamScores[player.team]++;
-        if ((this.mode === 'ffa' && player.kills >= this.limit) || (this.mode === 'tdm' && player.team && this.teamScores[player.team] >= this.limit)) this.finish(now);
-      }
+      this.damage(target, player, damage, now, { weapon: weaponId, headshot, quickscope });
     }
     return true;
   }
@@ -339,18 +398,36 @@ export class Room {
       while (rt.path.length && Math.hypot(rt.path[0].x - player.body.x, rt.path[0].z - player.body.z) < .8) rt.path.shift();
       if (rt.path[0]) destination = rt.path[0];
     }
+    const targetId = target?.id ?? null;
+    if (targetId !== rt.botTarget) {
+      rt.botTarget = targetId;
+      rt.botAcquireAt = now + .65 + Math.random() * .35 + (player.loadout.primary === 'intervention' ? .35 : 0);
+      rt.botAimAt = 0; rt.botBurstUntil = 0; rt.botRestUntil = rt.botAcquireAt;
+    }
+    if (target && now >= rt.botAimAt) {
+      // Sample a delayed aim point rather than following every opponent command.
+      rt.botAim = { x: target.body.x, y: target.body.y + bodyHeight(target.body) * .55, z: target.body.z };
+      rt.botAimAt = now + .18 + Math.random() * .16;
+      rt.botErrorYaw = (Math.random() - .5) * (player.loadout.primary === 'intervention' ? .09 : .065);
+      rt.botErrorPitch = (Math.random() - .5) * .04;
+    }
     const dx = destination.x - player.body.x, dz = destination.z - player.body.z;
-    const desiredYaw = Math.atan2(-dx, -dz);
+    const desiredYaw = target ? Math.atan2(player.body.x - rt.botAim.x, player.body.z - rt.botAim.z) + rt.botErrorYaw + Math.sin(now * 1.7) * .012 : Math.atan2(-dx, -dz);
     const difference = Math.atan2(Math.sin(desiredYaw - player.body.yaw), Math.cos(desiredYaw - player.body.yaw));
-    input.yaw = player.body.yaw + clamp(difference, -.09, .09);
+    input.yaw = player.body.yaw + clamp(difference, -.055, .055);
     if (target) {
       const d = Math.max(1, Math.hypot(dx, dz));
-      input.pitch = Math.atan2(target.body.y + bodyHeight(target.body) * .65 - origin.y, d) + Math.sin(now * 2.8 + rt.botSeq * .001) * .024;
+      const desiredPitch = Math.atan2(rt.botAim.y - origin.y, Math.max(1, Math.hypot(rt.botAim.x - origin.x, rt.botAim.z - origin.z))) + rt.botErrorPitch;
+      input.pitch = player.body.pitch + clamp(desiredPitch - player.body.pitch, -.03, .03);
       input.forward = d > 15 ? 1 : d < 6 ? -.7 : .2;
       input.right = rt.botStrafe * .6;
       input.ads = true;
-      // A 400ms reaction period and imperfect aim keep practice opponents fair.
-      input.fire = Math.abs(difference) < .1 && player.ads && now - player.adsSince > .4;
+      if (now >= rt.botRestUntil && now >= rt.botBurstUntil) {
+        rt.botBurstUntil = now + .22 + Math.random() * .22;
+        rt.botRestUntil = rt.botBurstUntil + .55 + Math.random() * .5;
+      }
+      const weapon = WEAPONS[weaponForSlot(player.loadout, player.slot)];
+      input.fire = now >= rt.botAcquireAt && now < rt.botBurstUntil && Math.abs(difference) < .1 && player.ads && now - player.adsSince >= weapon.adsTime && !(player.flashUntil > now && player.flashStrength > .15) && (weapon.automatic || (!rt.fireHeld && player.nextFire <= now));
     } else { input.pitch = 0; input.forward = Math.abs(difference) < 1 ? 1 : .15; input.sprint = Math.abs(difference) < .25; }
     const moved = distance(player.body, rt.lastPosition);
     rt.stuck = moved < .02 ? rt.stuck + DT : 0;
@@ -377,6 +454,7 @@ export class Room {
         player.ammo[player.slot] += transfer; player.reserve[player.slot] -= transfer; player.reloading = 0;
       }
       if (now - player.lastDamage > 5 && player.hp < 100) player.hp = Math.min(100, player.hp + 25 * DT);
+      if (player.flashUntil <= now) { player.flashUntil = 0; player.flashStrength = 0; }
 
       // One elapsed server tick earns one fixed movement step. Saving a small
       // budget during packet gaps lets arrivals catch up without advancing the
@@ -397,14 +475,20 @@ export class Room {
         if (!player.bot) rt.commandCredit--;
         rt.last = input;
         player.body = move(player.body, input, DT, this.arena);
+        if (player.body.vault) player.reloading = 0;
         player.ack = input.seq;
         if (input.slot !== player.slot) { player.slot = input.slot; player.reloading = 0; player.nextFire = Math.max(player.nextFire, now + .2); player.ads = false; rt.fireHeld = false; }
         const weapon = WEAPONS[weaponForSlot(player.loadout, player.slot)];
-        const ads = input.ads && !input.sprint && player.reloading <= now && player.body.stance !== 'slide' && weapon.id !== 'knife';
+        const handsBusy = !!player.body.vault || now < player.nextGrenade - .2;
+        const ads = input.ads && !handsBusy && !input.sprint && player.reloading <= now && player.body.stance !== 'slide' && weapon.id !== 'knife';
         if (ads && !player.ads) player.adsSince = now;
         player.ads = ads;
-        if (input.reload && !rt.reloadHeld && !player.reloading && player.ammo[player.slot] < weapon.mag && player.reserve[player.slot] > 0) { player.reloading = now + weapon.reloadTime; player.ads = false; }
+        if (input.reload && !handsBusy && !rt.reloadHeld && !player.reloading && player.ammo[player.slot] < weapon.mag && player.reserve[player.slot] > 0) { player.reloading = now + weapon.reloadTime; player.ads = false; }
         rt.reloadHeld = input.reload;
+        const fragPressed = input.frag === true && !rt.fragHeld, flashPressed = input.flash === true && !rt.flashHeld;
+        if (fragPressed) this.throwGrenade(player, 'frag', now);
+        else if (flashPressed) this.throwGrenade(player, 'flash', now);
+        rt.fragHeld = input.frag === true; rt.flashHeld = input.flash === true;
         const sprinting = input.sprint && input.forward > 0 && !input.ads && player.body.stance === 'stand';
         // Execute at this command's body/aim/weapon before the next queued
         // command can change them. Every shot still shares the current server
@@ -412,13 +496,14 @@ export class Room {
         if (input.fire && !sprinting && (weapon.automatic || !rt.fireHeld)) this.shoot(player, input, now);
         rt.fireHeld = input.fire;
       }
-      rt.history.push({ time: now, body: { ...player.body }, hp: player.hp, protectedUntil: player.protectedUntil });
+      rt.history.push({ time: now, body: copyBody(player.body), hp: player.hp, protectedUntil: player.protectedUntil });
       while (rt.history.length > 1 && rt.history[0].time < now - .5) rt.history.shift();
     }
+    this.updateGrenades(now);
     this.updateFlags(now);
     if (this.tickNumber % 3 === 0) this.broadcast(this.snapshot(now));
   }
-  snapshot(now: number): Snapshot { return { type: 'snapshot', time: now, tick: this.tickNumber, matchId: this.matchId, mode: this.mode, map: this.map, teamScores: { ...this.teamScores }, flags: this.flags.map(f => ({ ...f, home: { ...f.home }, position: { ...f.position } })), winner: this.winner, players: [...this.players.values()].map(p => ({ ...p, body: { ...p.body }, loadout: { ...p.loadout }, hp: Math.ceil(p.hp), ammo: [...p.ammo], reserve: [...p.reserve] })), events: this.events.filter(e => e.time >= now - 1), endsAt: this.endsAt, state: this.state }; }
+  snapshot(now: number): Snapshot { return { type: 'snapshot', time: now, tick: this.tickNumber, matchId: this.matchId, mode: this.mode, map: this.map, teamScores: { ...this.teamScores }, flags: this.flags.map(f => ({ ...f, home: { ...f.home }, position: { ...f.position } })), grenades: [...this.grenades.values()].map(g => ({ ...g, position: { ...g.position }, velocity: { ...g.velocity } })), winner: this.winner, players: [...this.players.values()].map(p => ({ ...p, body: copyBody(p.body), loadout: { ...p.loadout }, grenades: { ...p.grenades }, hp: Math.ceil(p.hp), ammo: [...p.ammo], reserve: [...p.reserve] })), events: this.events.filter(e => e.time >= now - 1), endsAt: this.endsAt, state: this.state }; }
 
 }
 
@@ -516,8 +601,9 @@ export class GameServer {
         case 'inputs': room?.enqueue(id, message.inputs, now); break;
         case 'loadout': {
           if (!room) throw new Error('Join a lobby first.');
-          if (room.state !== 'lobby') throw new Error('Loadouts are locked during a match.');
-          const member = room.members.get(id)!; member.loadout = cleanLoadout(message.loadout); member.ready = id === room.host; room.publish(); break;
+          const member = room.members.get(id)!; member.loadout = cleanLoadout(message.loadout);
+          if (room.state === 'lobby') member.ready = id === room.host;
+          room.publish(); break;
         }
         case 'ready': {
           if (!room || room.state !== 'lobby') break;

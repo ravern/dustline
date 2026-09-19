@@ -9,6 +9,8 @@ export const WEAPON_VIEW: Record<WeaponId, {sight: number; muzzle: readonly [num
   scar: {sight: .0944, muzzle: [0, .0056, -.696]},
   intervention: {sight: .127, muzzle: [0, .018, -.906]},
   m9: {sight: -.006, muzzle: [0, -.023, -.144]},
+  deagle: {sight: .016, muzzle: [0, -.029, -.187]},
+  glock: {sight: .002, muzzle: [0, -.029, -.144]},
   knife: {sight: 0, muzzle: [0, -.019, -.263]},
 };
 
@@ -93,5 +95,12 @@ export function releaseWeaponAsset(object: THREE.Object3D) {
 }
 
 export function loadWeaponAssets() {
-  return Promise.all((['intervention', 'ak47', 'scar', 'm9', 'knife'] as WeaponId[]).map(loadWeaponAsset));
+  return Promise.all((['intervention', 'ak47', 'scar', 'm9', 'deagle', 'glock', 'knife'] as WeaponId[]).map(loadWeaponAsset));
+}
+
+/** Rigid slide recoil costs one transform and shares the weapon's cached mesh. */
+export function poseWeaponAction(container: THREE.Object3D, id: WeaponId, recoil: number) {
+  if(id!=='deagle'&&id!=='glock')return;
+  const slide=container.getObjectByName('slide');
+  if(slide)slide.position.z=THREE.MathUtils.clamp(recoil/.11,0,1)*(id==='deagle'?.032:.026);
 }

@@ -10,7 +10,9 @@
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "node --import tsx tests/browser.mjs",
     "test:modes-browser": "node --import tsx tests/modes-browser.mjs",
-    "test:multiplayer": "node --import tsx tests/multiplayer.mjs"
+    "test:multiplayer": "node --import tsx tests/multiplayer.mjs",
+    "test:armory-browser": "node --import tsx tests/armory-browser.mjs",
+    "test:vault-browser": "node --import tsx tests/vault-browser.mjs"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.3.0",

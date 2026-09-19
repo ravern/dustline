@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import { reloadAmount } from './weapon-feel';
 import type { WeaponId } from '../shared/types';
 
 type ArmPose = {
@@ -63,9 +64,12 @@ export function attachViewmodelArms(container: THREE.Object3D, id: WeaponId): vo
   });
 }
 
+export function armPoseForWeapon(id: WeaponId): WeaponId { return id==='deagle'||id==='glock'?'m9':id; }
+
 function install(container: THREE.Object3D, id: WeaponId): void {
   if (loaded.has(container)) return;
-  const source = asset?.getObjectByName('arms_' + id);
+  const poseId=armPoseForWeapon(id);
+  const source = asset?.getObjectByName('arms_' + poseId);
   if (!source) return;
   const model = cloneSkeleton(source);
   model.name = 'viewmodelArms';
@@ -119,7 +123,7 @@ const reloadPole = new THREE.Vector3(0, -1, .05).normalize();
 export function poseViewmodelArms(container: THREE.Object3D, reloadProgress: number): void {
   const arm = instances.get(container);
   if (!arm) return;
-  const amount = Math.sin(THREE.MathUtils.clamp(reloadProgress, 0, 1) * Math.PI);
+  const amount = reloadAmount(THREE.MathUtils.clamp(reloadProgress, 0, 1));
   target.copy(arm.wrist);target.y -= amount * .10;target.z += amount * .13;
   direction.copy(target).sub(arm.shoulder);
   const distance = THREE.MathUtils.clamp(direction.length(), .03, arm.upperLength + arm.foreLength - .00001);

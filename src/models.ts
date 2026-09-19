@@ -231,7 +231,7 @@ function createWeapon(id:WeaponId):THREE.Group {
   cube(g,black,0,.142,.141,.041,.07,.035);
   cube(g,black,0,.118,-.453,.012,.119,.025);cube(g,steel,0,.064,-.453,.044,.03,.038);
   cyl(g,black,-.077,.034,.042,.011,.055,.011,'x');
- } else if(id==='m9') {
+ } else if(id==='m9'||id==='deagle'||id==='glock') {
   cube(g,steel,0,.047,-.058,.077,.075,.244);
   cube(g,black,0,-.013,-.04,.084,.061,.185);
   const grip=cube(g,black,0,-.11,.044,.071,.159,.086);grip.rotation.x=-.19;
@@ -334,8 +334,16 @@ export function poseSoldier(model:THREE.Group,body:Body,time:number,dt:number,lo
  const target=body.stance==='stand'?0:body.stance==='crouch'?1:2;
  model.userData.stance=THREE.MathUtils.damp(model.userData.stance??target,target,18,dt);
  const stance=model.userData.stance as number,crouch=Math.min(1,stance),slide=Math.max(0,stance-1);
+ const vault=body.vault?Math.sin(Math.PI*THREE.MathUtils.clamp(body.vault.elapsed/body.vault.duration,0,1)):0;
+ const airborne=body.grounded?0:1;
+ model.userData.air=THREE.MathUtils.damp(model.userData.air??airborne,Math.max(airborne,vault),14,dt);
+ const lift=model.userData.air as number;
+ if(body.grounded&&model.userData.wasGrounded===false)model.userData.land=.075;
+ model.userData.wasGrounded=body.grounded;
+ model.userData.land=THREE.MathUtils.damp(model.userData.land??0,0,15,dt);
+ const landing=model.userData.land as number;
  const hips=model.getObjectByName('hips')!,spine=model.getObjectByName('spine')!;
- hips.position.y=THREE.MathUtils.lerp(.91,.43,crouch)-slide*.22;
+ hips.position.y=THREE.MathUtils.lerp(.91,.43,crouch)-slide*.22-landing;
  hips.position.z=.07*crouch+.06*slide;hips.rotation.x=0;
  spine.position.y=.12-.055*crouch;spine.rotation.x=-.85*crouch+1.9*slide;
  const head=model.getObjectByName('head');if(head)head.rotation.x=body.pitch*.46-spine.rotation.x*.75;
@@ -346,7 +354,14 @@ export function poseSoldier(model:THREE.Group,body:Body,time:number,dt:number,lo
   const leg=model.getObjectByName(side+'Leg')!,shin=model.getObjectByName(side+'Shin')!;
   leg.rotation.x=1.33*crouch+.22*slide+gait*sign;leg.rotation.z=sign*(.015+.095*slide);
   shin.rotation.x=-2.33*crouch+2.15*slide-Math.max(0,-gait*sign)*.5;
-  const foot=shin.getObjectByName('boot');if(foot)foot.rotation.x=.9*crouch-1.62*slide;
+  // World-space lower limbs lift toward the chest through takeoff/vault, then
+  // extend into landing. The local pose keeps boot tips in the lower view.
+  const tuck=(local?1.92:.94)+vault*.14+sign*.1*(1-vault);
+  leg.rotation.x=THREE.MathUtils.lerp(leg.rotation.x,tuck,lift*(1-slide));
+  shin.rotation.x=THREE.MathUtils.lerp(shin.rotation.x,local?-.53:-1.22,lift*(1-slide));
+  leg.rotation.z+=sign*vault*.09;
+  leg.rotation.x+=landing*2;shin.rotation.x-=landing*3;
+  const foot=shin.getObjectByName('boot');if(foot)foot.rotation.x=THREE.MathUtils.lerp(.9*crouch-1.62*slide,-.55,lift*(1-slide));
 
  }
  if(local){hips.position.z-=slide*.04;spine.visible=false;}

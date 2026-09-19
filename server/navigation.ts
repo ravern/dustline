@@ -1,4 +1,4 @@
-import type { MapDefinition } from '../shared/map.ts';
+import { containsMapPosition, type MapDefinition } from '../shared/map.ts';
 import type { Vec3 } from '../shared/types.ts';
 
 // A small shared ground graph keeps practice opponents moving around cover.
@@ -12,7 +12,7 @@ function gridFor(map: MapDefinition): Grid {
   const free = new Uint8Array(size * size);
   for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
     const px = origin + x * STEP, pz = origin + z * STEP;
-    free[z * size + x] = map.boxes.some(box => box.y - box.h / 2 < 1.75 && box.y + box.h / 2 > .42 && Math.abs(px - box.x) < box.w / 2 + .45 && Math.abs(pz - box.z) < box.d / 2 + .45) ? 0 : 1;
+    free[z * size + x] = !containsMapPosition(map, px, pz, .45) || map.boxes.some(box => box.y - box.h / 2 < 1.75 && box.y + box.h / 2 > .42 && Math.abs(px - box.x) < box.w / 2 + .45 && Math.abs(pz - box.z) < box.d / 2 + .45) ? 0 : 1;
   }
   const grid = { size, origin, free }; grids.set(map, grid); return grid;
 }
@@ -41,7 +41,7 @@ export function route(map: MapDefinition, from: Vec3, to: Vec3): Vec3[] {
       // Adjacent grid points may straddle a thin container wall. Test the
       // swept segment, not just the two endpoints, before accepting an edge.
       const a = point(current), b = point(next);
-      const blocked = map.boxes.some(box => box.y - box.h / 2 < 1.75 && box.y + box.h / 2 > .42 && Math.max(a.x, b.x) > box.x - box.w / 2 - .4 && Math.min(a.x, b.x) < box.x + box.w / 2 + .4 && Math.max(a.z, b.z) > box.z - box.d / 2 - .4 && Math.min(a.z, b.z) < box.z + box.d / 2 + .4);
+      const blocked = ![.25, .5, .75].every(t => containsMapPosition(map, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, .4)) || map.boxes.some(box => box.y - box.h / 2 < 1.75 && box.y + box.h / 2 > .42 && Math.max(a.x, b.x) > box.x - box.w / 2 - .4 && Math.min(a.x, b.x) < box.x + box.w / 2 + .4 && Math.max(a.z, b.z) > box.z - box.d / 2 - .4 && Math.min(a.z, b.z) < box.z + box.d / 2 + .4);
       if (blocked) continue;
       parents[next] = current; queue[tail++] = next;
     }
@@ -49,5 +49,7 @@ export function route(map: MapDefinition, from: Vec3, to: Vec3): Vec3[] {
   if (parents[goal] < 0) return [];
   const path: Vec3[] = [];
   for (let index = goal; index !== start; index = parents[index]) path.push(point(index));
-  path.reverse(); path.push({ ...to }); return path;
+  path.reverse();
+  if (containsMapPosition(map, to.x, to.z, .35)) path.push({ ...to });
+  return path;
 }

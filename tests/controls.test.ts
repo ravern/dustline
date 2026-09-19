@@ -22,3 +22,14 @@ test('personal bindings persist, reject conflicts, and drive keyboard and mouse 
     assert.deepEqual(readBindings(corrupt), defaultBindings());
   }
 });
+
+test('new grenade controls preserve existing custom bindings without stealing a used key', () => {
+  const old: Record<string, string[]> = defaultBindings();
+  delete old.frag; delete old.flash;
+  old.forward = ['KeyG'];
+  const migrated = readBindings(old);
+  assert.deepEqual(migrated.forward, ['KeyG']);
+  assert.notEqual(migrated.frag[0], 'KeyG');
+  assert.equal(actionForCode(migrated, migrated.frag[0]), 'frag');
+  assert.equal(actionForCode(migrated, migrated.flash[0]), 'flash');
+});

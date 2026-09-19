@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { WEAPON_VIEW, loadWeaponAsset } from '../src/weapon-assets.ts';
-import { loadViewmodelArms, poseViewmodelArms } from '../src/arms.ts';
-import { buildWeapon } from '../src/models.ts';
+import { WEAPON_VIEW, loadWeaponAsset, poseWeaponAction } from '../src/weapon-assets.ts';
+import { armPoseForWeapon, loadViewmodelArms, poseViewmodelArms } from '../src/arms.ts';
+import { buildLocalBody, buildWeapon, poseSoldier } from '../src/models.ts';
 import { GameView } from '../src/renderer.ts';
+import { spawnBody } from '../shared/physics.ts';
 import type { WeaponId } from '../shared/types.ts';
 
 const ids = Object.keys(WEAPON_VIEW) as WeaponId[];
@@ -88,7 +89,7 @@ for (const relative of [...ids.map(id => `weapons/${id}.glb`), 'viewmodel-arms.g
       assert.equal(g.skins?.length ?? 0, 0, 'rigid weapons should not create per-instance skeleton work');
     } else {
       for (const id of ids) {
-        const root = g.nodes.findIndex((n: any) => n.name === 'arms_' + id); assert.ok(root >= 0);
+        const root = g.nodes.findIndex((n: any) => n.name === 'arms_' + armPoseForWeapon(id)); assert.ok(root >= 0);
         let total = 0, skinned = 0;
         function visit(index: number) {
           const node = g.nodes[index];
@@ -175,4 +176,34 @@ test('failed downloads retry, released targets stay released, and live clones ow
   assert.equal(sharedGeometryDisposed, false); assert.equal(rigB.skeleton.boneTexture, siblingTexture);
   poseViewmodelArms(second, .5); assert.ok(sibling.position.distanceTo(neutral) > .1);
   dispose(second);
+});
+
+test('sidearms have distinct silhouettes, textured materials and independent moving slides', async () => {
+  const scenes = await Promise.all(['deagle', 'glock'].map(id => parseScene(`weapons/${id}.glb`)));
+  const [eagle, glock] = scenes.map(({scene})=>new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3()));
+  assert.ok(eagle.z > glock.z * 1.14, 'Desert Eagle must have a visibly longer barrel and frame');
+  assert.ok(eagle.x > glock.x * 1.2, 'Desert Eagle must have the wider heavy slide');
+  for (const [i,id] of (['deagle','glock'] as const).entries()) {
+    const scene=scenes[i].scene, slide=scene.getObjectByName('slide')!;
+    assert.ok(slide); const frame=scene.getObjectByName('frame')!,neutral=frame.position.clone();
+    poseWeaponAction(scene,id,.11); assert.ok(slide.position.z>.02);assert.deepEqual(frame.position.toArray(),neutral.toArray());
+    poseWeaponAction(scene,id,0);assert.equal(slide.position.z,0);
+    assert.equal(armPoseForWeapon(id),'m9','new pistols share the anatomically authored two-hand grip');
+  }
+});
+
+test('local boots tuck into jump and vault poses and return to planted stance', () => {
+  const model=buildLocalBody();let body=spawnBody({x:0,y:0,z:0});
+  const foot=model.getObjectByName('leftShin')!.getObjectByName('boot')!;
+  const location=()=>{model.updateMatrixWorld(true);return foot.getWorldPosition(new THREE.Vector3());};
+  const advance=()=>{for(let i=0;i<100;i++)poseSoldier(model,body,i/60,1/60,true);};
+  advance();const grounded=location();
+  body={...body,grounded:false,vy:4};advance();const jumping=location();
+  assert.ok(jumping.y>grounded.y+.4,'airborne boots must rise, not hang at standing length');
+  assert.ok(jumping.z<grounded.z-.4,'knees should project the boots into the lower view');
+  body={...body,stance:'crouch',vault:{elapsed:.27,duration:.54,from:{x:0,y:0,z:0},to:{x:0,y:.6,z:-1.5},height:1}};advance();
+  const vaulting=location();assert.ok(vaulting.y>grounded.y+.1);assert.ok(vaulting.z<grounded.z-.4);
+  body={...body,stance:'stand',vault:undefined,grounded:true,vy:0};advance();
+  assert.ok(location().distanceTo(grounded)<.002,'landing should settle back into the original stance');
+  dispose(model);
 });

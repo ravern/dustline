@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAPS, MAP_BOXES, MAP_SIZE, SPAWNS, getMap, type MapDefinition } from '../shared/map.ts';
+import { sceneryInnerRadius, containsMapPosition, MAPS, MAP_BOXES, MAP_SIZE, SPAWNS, getMap, type MapDefinition } from '../shared/map.ts';
 import { DT, move, PLAYER_RADIUS, spawnBody } from '../shared/physics.ts';
 import type { Input, Vec3 } from '../shared/types.ts';
 
 const input:Input={seq:1,yaw:0,pitch:0,forward:0,right:1,jump:false,sprint:false,crouch:false,ads:false,fire:false,reload:false,slot:0,time:0};
 function openAt(map:MapDefinition,p:Vec3,height=1.75){
-  return Math.abs(p.x)<map.size/2-PLAYER_RADIUS&&Math.abs(p.z)<map.size/2-PLAYER_RADIUS&&!map.boxes.some(b=>
+  return containsMapPosition(map,p.x,p.z,PLAYER_RADIUS)&&!map.boxes.some(b=>
     p.x+PLAYER_RADIUS>b.x-b.w/2&&p.x-PLAYER_RADIUS<b.x+b.w/2&&
     p.z+PLAYER_RADIUS>b.z-b.d/2&&p.z-PLAYER_RADIUS<b.z+b.d/2&&
     p.y+height>b.y-b.h/2&&p.y<b.y+b.h/2);
 }
 
-test('all eighteen arenas expose complete spawn sets and the legacy Yard aliases',()=>{
-  assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay','bazaar','harbor','citadel','junction','oasis','overpass','canal','crossfire','hangar','quarry','outpost','gardens','vault','terminal','switchback']);
+test('all twenty-one arenas expose complete spawn sets and the legacy Yard aliases',()=>{
+  assert.deepEqual(MAPS.map(map=>map.id),['yard','foundry','relay','bazaar','harbor','citadel','junction','oasis','overpass','canal','crossfire','hangar','quarry','outpost','gardens','vault','terminal','switchback','airfield','homestead','derrick']);
   assert.equal(getMap('yard').boxes,MAP_BOXES);assert.equal(getMap('yard').spawns,SPAWNS);assert.equal(getMap('yard').size,MAP_SIZE);
   for(const map of MAPS){
     assert.ok(map.spawns.length>=32);
@@ -65,4 +65,32 @@ test('Raised routes can be reached up their stairs without jumping',()=>{
     for(let i=0;i<145;i++){b=move(b,{...input,right:0,forward:1},DT,map);highest=Math.max(highest,b.y);}
     assert.ok(highest>=height-.001,`${id} staircase only reached ${highest}`);
   }
+});
+
+
+test('original arenas have distinct non-square silhouettes and real perimeter solids',()=>{
+ for(const [id,outside] of [['airfield',{x:25,z:-25}],['homestead',{x:25,z:0}],['derrick',{x:25,z:20}]] as const){
+  const map=getMap(id);assert.ok(map.outline&&map.footprint);
+  assert.equal(containsMapPosition(map,outside.x,outside.z),false);
+  assert.equal(map.boxes.filter(b=>b.kind==='perimeter').length,map.outline.length);
+  assert.ok(map.spawns.every(p=>containsMapPosition(map,p.x,p.z,PLAYER_RADIUS)));
+ }
+});
+
+test('distant terrain has enough clearance that its jitter cannot hide a playable position',()=>{
+ for(const map of MAPS)assert.ok(sceneryInnerRadius(map)-4>map.size*Math.SQRT1_2+7);
+});
+
+test('new boarding galleries, house terraces, and both derrick decks are walkable',()=>{
+ for(const fixture of [
+  {id:'airfield',x:-13,z:10,y:0,right:1,forward:0,height:2.4},
+  {id:'homestead',x:-12.7,z:-17.55,y:0,right:0,forward:1,height:3.2},
+  {id:'homestead',x:12.7,z:17.55,y:0,right:0,forward:-1,height:3.2},
+  {id:'derrick',x:2.8,z:17,y:0,right:0,forward:1,height:3.2},
+  {id:'derrick',x:-2.4,z:7.8,y:3.2,right:0,forward:1,height:6.2},
+ ]){
+  const arena=getMap(fixture.id);let b={...spawnBody(fixture),grounded:true},highest=b.y;
+  for(let i=0;i<150;i++){b=move(b,{...input,right:fixture.right,forward:fixture.forward},DT,arena);highest=Math.max(highest,b.y);}
+  assert.ok(highest>=fixture.height-.01,`${fixture.id} ${fixture.x} stair reached ${highest}, expected ${fixture.height}`);
+ }
 });

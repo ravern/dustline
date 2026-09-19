@@ -4,7 +4,7 @@ export const CONTROLS = {
   left: { label: 'Move left', codes: ['KeyA'] },
   right: { label: 'Move right', codes: ['KeyD'] },
   sprint: { label: 'Sprint', codes: ['ShiftLeft'] },
-  jump: { label: 'Jump', codes: ['Space'] },
+  jump: { label: 'Jump / vault', codes: ['Space'] },
   crouch: { label: 'Crouch / slide', codes: ['KeyC', 'ControlLeft'] },
   fire: { label: 'Fire / knife', codes: ['Mouse0'] },
   aim: { label: 'Aim', codes: ['Mouse2'] },
@@ -13,6 +13,8 @@ export const CONTROLS = {
   secondary: { label: 'Pistol', codes: ['Digit2'] },
   knife: { label: 'Knife', codes: ['Digit3'] },
   melee: { label: 'Quick melee', codes: ['KeyV'] },
+  frag: { label: 'Throw frag grenade', codes: ['KeyG'] },
+  flash: { label: 'Throw flashbang', codes: ['KeyF'] },
   swap: { label: 'Swap weapon', codes: ['KeyQ'] },
   scoreboard: { label: 'Scoreboard', codes: ['Tab'] },
   pause: { label: 'Release mouse / menu', codes: ['Escape'] },
@@ -47,7 +49,14 @@ export function readBindings(value: unknown): Bindings {
   switch (true) {
     case !value || typeof value !== 'object' || Array.isArray(value): return defaults;
     default: {
-      const stored = value as Record<string, unknown>;
+      const stored = { ...value } as Record<string, unknown>;
+      // New actions must not erase a player's existing custom controls on upgrade.
+      const used = new Set(Object.values(stored).flatMap(codes => Array.isArray(codes) ? codes : []));
+      for (const action of ['frag', 'flash'] as const) if (stored[action] === undefined) {
+        const code = [...defaults[action], 'KeyH', 'KeyJ', 'KeyK', 'Digit4', 'Digit5'].find(code => !used.has(code));
+        if (!code) return defaults;
+        stored[action] = [code]; used.add(code);
+      }
       const valid = ACTIONS.every(action => Array.isArray(stored[action]) && stored[action].length > 0 && stored[action].length <= 2 && stored[action].every((code: unknown) => typeof code === 'string' && validCodes.has(code) && (code !== 'Escape' || action === 'pause')));
       switch (valid) {
         case false: return defaults;
