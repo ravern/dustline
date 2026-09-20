@@ -9,6 +9,10 @@ const errors=[];
 const state=page=>page.evaluate(()=>window.__dustline.state);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const wait=(page,fn)=>page.waitForFunction(fn,undefined,{timeout:15000});
+async function capture(page,path){
+  const session=await page.context().newCDPSession(page);
+  try{const frame=await session.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await fs.writeFile(path,Buffer.from(frame.data,'base64'));}finally{await session.detach();}
+}
 async function turnToward(page, yaw, pitch = 0) {
   // Real pointer events only: the diagnostic object is never mutated.
   await page.mouse.move(640, 360);
@@ -64,7 +68,7 @@ async function walkTo(page,goal,label){
 try{
  const pages=[];
  for(const callsign of ['VAULT TEST','IDLE TEST']){
-  const context=await browser.newContext({viewport:{width:1280,height:800}}),page=await context.newPage();pages.push(page);page.on('pageerror',e=>errors.push(e.message));
+  const context=await browser.newContext({viewport:{width:1280,height:800}}),page=await context.newPage();pages.push(page);page.on('pageerror',e=>errors.push(e.message));page.on('console',message=>{if(message.type()==='error'&&/WebGL|shader|THREE\./i.test(message.text()))errors.push(message.text());});
   await page.goto(process.env.DUSTLINE_URL||'http://localhost:3000');await wait(page,()=>window.__dustline?.state.connected);
   await page.locator('#callsign').fill(callsign);
  }
@@ -74,6 +78,9 @@ try{
  const room=(await state(page)).room;await guest.locator('#room-code').fill(room.code);await guest.locator('#join-lobby').click();await wait(guest,()=>!!window.__dustline.state.room);await guest.locator('#ready-button').click();
  await wait(page,()=>window.__dustline.state.room.players.every(p=>p.id===window.__dustline.state.room.host||p.ready));
  await page.bringToFront();await page.locator('#start-match').click();await wait(page,()=>window.__dustline.state.locked&&window.__dustline.state.body);
+ await page.keyboard.down('Space');await wait(page,()=>!window.__dustline.state.body.grounded&&!window.__dustline.state.body.vault);await pause(140);
+ const jumping=(await state(page)).body;assert.equal(jumping.vault,undefined);assert.ok(jumping.y>0);await capture(page,`${output}/ordinary-jump-no-feet.png`);
+ await page.keyboard.up('Space');await wait(page,()=>window.__dustline.state.body.grounded);
  const start=(await state(page)).body;
  const barriers=MAP_BOXES.filter(b=>b.kind==='barrier'&&b.w>b.d&&b.y<1).map(b=>({b,goal:{x:b.x,z:b.z+b.d/2+2}})).filter(({goal})=>walkable(Math.round(goal.x),Math.round(goal.z))).sort((a,b)=>Math.hypot(a.goal.x-start.x,a.goal.z-start.z)-Math.hypot(b.goal.x-start.x,b.goal.z-start.z));
  assert.ok(barriers.length);const {b:barrier,goal}=barriers[0];
@@ -83,11 +90,13 @@ try{
  await page.keyboard.down('w');await pause(1000);await page.keyboard.up('w');await pause(120);
  const before=(await state(page)).body;assert.ok(Math.abs(before.z-(barrier.z+barrier.d/2+.35))<.2,JSON.stringify({before,barrier}));
  await page.keyboard.down('w');await page.keyboard.down('Space');await wait(page,()=>!!window.__dustline.state.body.vault);
- const during=(await state(page)).body;await page.screenshot({path:`${output}/vault-start.png`});await pause(150);await page.screenshot({path:`${output}/vault-over-cover.png`});
- await page.keyboard.up('Space');await page.keyboard.up('w');await wait(page,()=>!window.__dustline.state.body.vault&&window.__dustline.state.body.grounded);
+ const during=(await state(page)).body;await page.keyboard.up('Space');await page.keyboard.up('w');
+ if(during.vault.elapsed<.18)await pause((.18-during.vault.elapsed)*1000);
+ await capture(page,`${output}/vault-over-cover.png`);
+ await wait(page,()=>!window.__dustline.state.body.vault&&window.__dustline.state.body.grounded);
  const after=(await state(page)).body;assert.ok(after.z<barrier.z-barrier.d/2-.34,JSON.stringify({before,after,barrier}));assert.equal(after.y,0);
  await page.keyboard.down('Control');await wait(page,()=>window.__dustline.state.body.stance==='crouch');await page.screenshot({path:`${output}/crouch.png`});await page.keyboard.up('Control');
- await turnToward(page,clearHeading((await state(page)).body));await page.keyboard.down('Shift');await page.keyboard.down('w');await pause(420);await page.keyboard.down('Control');await wait(page,()=>window.__dustline.state.body.stance==='slide');await page.screenshot({path:`${output}/slide-feet.png`});await page.keyboard.up('Control');await page.keyboard.up('Shift');await page.keyboard.up('w');
- assert.deepEqual(errors,[]);const result={realKeyboardInput:true,barrier,before,during,after,errors};await fs.writeFile(`${output}/results.json`,JSON.stringify(result,null,2));console.log('PASS actual browser vault, crouch, and sprint-slide');
+ await turnToward(page,clearHeading((await state(page)).body));await page.keyboard.down('Shift');await page.keyboard.down('w');await pause(420);await page.keyboard.down('Control');await wait(page,()=>window.__dustline.state.body.stance==='slide');await pause(140);await capture(page,`${output}/slide-feet.png`);await page.keyboard.up('Control');await page.keyboard.up('Shift');await page.keyboard.up('w');
+ assert.deepEqual(errors,[]);const result={realKeyboardInput:true,jumping,barrier,before,during,after,errors};await fs.writeFile(`${output}/results.json`,JSON.stringify(result,null,2));console.log('PASS actual browser ordinary jump, vault, crouch, and sprint-slide');
  await page.keyboard.press('Escape');await page.locator('#quit-match').click();
 }catch(error){console.error(error);await fs.writeFile(`${output}/failure.json`,JSON.stringify({error:String(error.stack),errors},null,2));process.exitCode=1;}finally{await browser.close();}

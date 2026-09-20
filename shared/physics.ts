@@ -1,4 +1,5 @@
 import { containsMapPosition, getMap, type MapDefinition } from './map.ts';
+import { collisionIndex, type CollisionIndex } from './collision.ts';
 import type { Body, Box, Input, Vec3 } from './types.ts';
 
 export const DT = 1 / 60;
@@ -15,7 +16,8 @@ const overlap = (a: number, b: number, c: number, d: number) => a < d - EPS && b
 function intersects(b: Body, box: Box, height = bodyHeight(b)): boolean {
   return overlap(b.x - PLAYER_RADIUS, b.x + PLAYER_RADIUS, box.x - box.w / 2, box.x + box.w / 2) && overlap(b.y, b.y + height, box.y - box.h / 2, box.y + box.h / 2) && overlap(b.z - PLAYER_RADIUS, b.z + PLAYER_RADIUS, box.z - box.d / 2, box.z + box.d / 2);
 }
-function canOccupy(b: Body, map: MapDefinition, height = bodyHeight(b)) { return containsMapPosition(map,b.x,b.z,PLAYER_RADIUS)&&!map.boxes.some(box => intersects(b, box, height)); }
+function nearby(b:Body,index:CollisionIndex) { return index.columns(b.x-PLAYER_RADIUS,b.z-PLAYER_RADIUS,b.x+PLAYER_RADIUS,b.z+PLAYER_RADIUS); }
+function canOccupy(b: Body, map: MapDefinition, height = bodyHeight(b), index=collisionIndex(map)) { return containsMapPosition(map,b.x,b.z,PLAYER_RADIUS)&&!nearby(b,index).some(box => intersects(b, box, height)); }
 
 export const VAULT_DURATION = .54;
 const smooth=(x:number)=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
@@ -26,7 +28,7 @@ export function vaultPosition(vault:NonNullable<Body['vault']>,elapsed:number):V
     progress>.72?vault.height+(vault.to.y-vault.height)*smooth((progress-.72)/.28):vault.height;
   return {x:vault.from.x+(vault.to.x-vault.from.x)*cross,y,z:vault.from.z+(vault.to.z-vault.from.z)*cross};
 }
-function vaultCandidate(body:Body,input:Input,map:MapDefinition):Body['vault'] {
+function vaultCandidate(body:Body,input:Input,map:MapDefinition,index:CollisionIndex):Body['vault'] {
   if(input.forward<.25||input.crouch||body.stance==='slide')return;
   const norm=Math.max(1,Math.hypot(input.forward,input.right));
   const dx=(-Math.sin(input.yaw)*input.forward+Math.cos(input.yaw)*input.right)/norm;
@@ -34,7 +36,7 @@ function vaultCandidate(body:Body,input:Input,map:MapDefinition):Body['vault'] {
   const length=Math.hypot(dx,dz);if(length<.1)return;
   const direction={x:dx/length,z:dz/length};
   let best:Body['vault'],nearest=Infinity;
-  for(const box of map.boxes){
+  for(const box of index.query(Math.min(body.x,body.x+direction.x*.95)-PLAYER_RADIUS,body.y,Math.min(body.z,body.z+direction.z*.95)-PLAYER_RADIUS,Math.max(body.x,body.x+direction.x*.95)+PLAYER_RADIUS,body.y+1.5,Math.max(body.z,body.z+direction.z*.95)+PLAYER_RADIUS)){
     const top=box.y+box.h/2,rise=top-body.y;
     if(rise<.5||rise>1.5||box.y-box.h/2>body.y+.15||['boundary','perimeter'].includes(box.kind))continue;
     let enter=-Infinity,exit=Infinity;
@@ -48,7 +50,7 @@ function vaultCandidate(body:Body,input:Input,map:MapDefinition):Body['vault'] {
     if(enter<-.02||enter>.95||enter>=exit||enter>=nearest||exit-enter>2.8)continue;
     const target={x:body.x+direction.x*(exit+.14),y:0,z:body.z+direction.z*(exit+.14)};
     // Choose a real supporting floor, never a suspended landing in mid-air.
-    for(const support of map.boxes){const y=support.y+support.h/2;
+    for(const support of index.query(target.x,0,target.z,target.x,body.y+.1,target.z)){const y=support.y+support.h/2;
       if(y<=body.y+.1&&y>target.y&&Math.abs(target.x-support.x)<support.w/2-PLAYER_RADIUS&&Math.abs(target.z-support.z)<support.d/2-PLAYER_RADIUS)target.y=y;
     }
     if(body.y-target.y>1.5)continue;
@@ -58,26 +60,26 @@ function vaultCandidate(body:Body,input:Input,map:MapDefinition):Body['vault'] {
     // Validate the entire trajectory, not just the destination: a thin wall or
     // low roof anywhere along the vault must reject it before motion begins.
     const samples=Math.max(32,Math.ceil((exit+.14+rise*2)/.06));
-    for(let i=0;i<=samples;i++)if(!canOccupy({...crouched,...vaultPosition(candidate,i/samples*VAULT_DURATION)},map)){clear=false;break;}
+    for(let i=0;i<=samples;i++)if(!canOccupy({...crouched,...vaultPosition(candidate,i/samples*VAULT_DURATION)},map,1.05,index)){clear=false;break;}
     if(clear){nearest=enter;best=candidate;}
   }
   return best;
 }
-function advanceVault(body:Body,input:Input,dt:number,map:MapDefinition):Body {
+function advanceVault(body:Body,input:Input,dt:number,map:MapDefinition,index:CollisionIndex):Body {
   const previous=body.vault!,elapsed=Math.min(previous.duration,previous.elapsed+dt),vault={...previous,elapsed};
   const target=vaultPosition(vault,elapsed),b={...body,stance:'crouch' as const};
   const count=Math.max(1,Math.ceil(Math.hypot(target.x-b.x,target.y-b.y,target.z-b.z)/.06));
   for(let i=1;i<=count;i++){
     const t=i/count,candidate={...b,x:b.x+(target.x-b.x)*t,y:b.y+(target.y-b.y)*t,z:b.z+(target.z-b.z)*t};
-    if(!canOccupy(candidate,map))return {...b,vault:undefined,vx:0,vy:0,vz:0,grounded:false};
+    if(!canOccupy(candidate,map,bodyHeight(candidate),index))return {...b,vault:undefined,vx:0,vy:0,vz:0,grounded:false};
   }
   const result:Body={...b,...target,vault,grounded:false,vx:0,vz:0,vy:0,slideTime:0};
-  if(elapsed>=vault.duration){result.vault=undefined;result.grounded=true;result.stance=!input.crouch&&canOccupy(result,map,1.75)?'stand':'crouch';}
+  if(elapsed>=vault.duration){result.vault=undefined;result.grounded=true;result.stance=!input.crouch&&canOccupy(result,map,1.75,index)?'stand':'crouch';}
   return result;
 }
 
 /** Shared deterministic fixed-step movement. Position is at the player's feet. */
-export function move(body: Body, input: Input, dt = DT, map: MapDefinition = getMap('yard')): Body {
+export function move(body: Body, input: Input, dt = DT, map: MapDefinition = getMap('yard'), index=collisionIndex(map)): Body {
   const b = { ...body };
   dt = Math.max(0, Math.min(dt, 1 / 30));
   b.yaw = input.yaw;
@@ -87,8 +89,8 @@ export function move(body: Body, input: Input, dt = DT, map: MapDefinition = get
   const crouchPressed = input.crouch && !body.crouchHeld;
   b.jumpHeld = input.jump;
   b.crouchHeld = input.crouch;
-  if(b.vault)return advanceVault(b,input,dt,map);
-  if(jumpPressed&&b.grounded){const vault=vaultCandidate(b,input,map);if(vault){b.vault=vault;return advanceVault(b,input,dt,map);}}
+  if(b.vault)return advanceVault(b,input,dt,map,index);
+  if(jumpPressed&&b.grounded){const vault=vaultCandidate(b,input,map,index);if(vault){b.vault=vault;return advanceVault(b,input,dt,map,index);}}
   const speedBefore = Math.hypot(b.vx, b.vz);
   if (crouchPressed && input.sprint && b.grounded && speedBefore >= 6 && b.slideCooldown === 0) {
     b.stance = 'slide'; b.slideTime = .65; b.slideCooldown = 1.25;
@@ -98,16 +100,16 @@ export function move(body: Body, input: Input, dt = DT, map: MapDefinition = get
     b.slideTime = Math.max(0, b.slideTime - dt);
     // A slide cannot expand its hitbox through a low obstruction. It slows to a
     // crawl until the shoulders are clear, then naturally returns to crouch.
-    if ((b.slideTime <= 0 || !b.grounded) && canOccupy(b, map, 1.05)) b.stance = 'crouch';
+    if ((b.slideTime <= 0 || !b.grounded) && canOccupy(b, map, 1.05,index)) b.stance = 'crouch';
   }
   if (b.stance !== 'slide') {
     if (input.crouch) b.stance = 'crouch';
-    else if (canOccupy(b, map, 1.75)) b.stance = 'stand';
+    else if (canOccupy(b, map, 1.75,index)) b.stance = 'stand';
     else b.stance = 'crouch';
   }
-  if (jumpPressed && b.grounded && canOccupy(b, map, 1.05)) {
+  if (jumpPressed && b.grounded && canOccupy(b, map, 1.05,index)) {
     b.vy = JUMP; b.grounded = false; b.slideTime = 0;
-    if (!input.crouch && canOccupy(b, map, 1.75)) b.stance = 'stand';
+    if (!input.crouch && canOccupy(b, map, 1.75,index)) b.stance = 'stand';
     else b.stance = 'crouch';
   }
   const f = Math.max(-1, Math.min(1, input.forward));
@@ -136,12 +138,14 @@ export function move(body: Body, input: Input, dt = DT, map: MapDefinition = get
     const velocity = axis === 'x' ? 'vx' : 'vz';
     const previousAxis=b[axis],axisSpeed=b[velocity];
     b[axis] += axisSpeed * dt;
-    for (const box of map.boxes) {
+    let candidates=nearby(b,index);
+    for (let cursor=0;cursor<candidates.length;cursor++) {
+      const box=candidates[cursor];
       if (!intersects(b, box)) continue;
       const top = box.y + box.h / 2;
       if (wasGrounded && top >= b.y - EPS && top - b.y <= .42) {
         const elevated = { ...b, y: top + EPS };
-        if (canOccupy(elevated, map)) { b.y = top + EPS; continue; }
+        if (canOccupy(elevated, map,bodyHeight(elevated),index)) { b.y = top + EPS; continue; }
       }
       const size = axis === 'x' ? box.w : box.d;
       // Stopping at one solid must still resolve every overlapping frame or
@@ -149,6 +153,10 @@ export function move(body: Body, input: Input, dt = DT, map: MapDefinition = get
       if (axisSpeed > 0) b[axis] = Math.min(b[axis], box[axis] - size / 2 - PLAYER_RADIUS - EPS);
       else if (axisSpeed < 0) b[axis] = Math.max(b[axis], box[axis] + size / 2 + PLAYER_RADIUS + EPS);
       b[velocity] = 0;
+      // A correction can cross a cell boundary (or eject an initially embedded
+      // body). Continue the original ordered scan after this contact so later
+      // obstacles cannot be omitted by the earlier broadphase footprint.
+      if(candidates!==map.boxes){candidates=map.boxes;cursor=map.boxes.indexOf(box);}
     }
     if(!containsMapPosition(map,b.x,b.z,PLAYER_RADIUS)){b[axis]=previousAxis;b[velocity]=0;}
     const bound = map.size / 2 - PLAYER_RADIUS;
@@ -158,7 +166,7 @@ export function move(body: Body, input: Input, dt = DT, map: MapDefinition = get
   b.vy -= GRAVITY * dt;
   b.y += b.vy * dt;
   b.grounded = false;
-  for (const box of map.boxes) {
+  for (const box of nearby(b,index)) {
     if (!intersects(b, box)) continue;
     const top = box.y + box.h / 2;
     const bottom = box.y - box.h / 2;

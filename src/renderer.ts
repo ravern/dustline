@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildWorld } from './world';
-import { buildLocalBody, buildSoldier, buildWeapon, loadModelKit, poseSoldier, releaseModel, setSoldierTeam } from './models';
+import { buildLocalBody, buildWeapon, loadModelKit, poseSoldier, releaseModel, setSoldierTeam } from './models';
+import { RemoteActor, useDistantActor } from './remote-actor';
+import { ShotEffects } from './shot-effects';
 import { eyeHeight } from '../shared/physics';
 import { WeaponFeel, reloadAmount } from './weapon-feel';
 import { poseViewmodelArms } from './arms';
@@ -37,9 +39,11 @@ export class GameView {
   previewRenderer?: THREE.WebGLRenderer;
   previewModel?: THREE.Group;
   soldiers = new Map<string, THREE.Group>();
+  private actors = new Map<string, RemoteActor>();
   localBody = buildLocalBody();
   objectives = new Map<Team, {base:THREE.Group; flag:THREE.Group; state:FlagState}>();
   effects: {object:THREE.Object3D;until:number}[] = [];
+  private shotEffects = new ShotEffects(this.scene);
   gun?: THREE.Group;
   gunId?: WeaponId;
   flash = new THREE.Group();
@@ -105,6 +109,7 @@ export class GameView {
     if(id===this.mapId)return;
     this.world.dispose();this.mapId=id;this.world=buildWorld(this.scene,getMap(id));this.world.setQuality(this.quality);
     for(const effect of this.effects){this.scene.remove(effect.object);this.disposeObject(effect.object);}this.effects=[];
+    this.shotEffects.clear();
     this.setObjectives([],this.objectiveSelf);
     this.setGrenades([]);
   }
@@ -164,14 +169,12 @@ export class GameView {
   }
   shot(){this.kick=.11;this.weaponFeel.fire();this.flashUntil=performance.now()/1000+.045;}
   tracer(from:Vec3,to:Vec3,time:number){
-    if(this.effects.length>(this.quality==='low'?16:64))return;
-    const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(from.x,from.y,from.z),new THREE.Vector3(to.x,to.y,to.z)]);
-    const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffdf9b,transparent:true,opacity:.68}));this.scene.add(line);this.effects.push({object:line,until:time+.055});
-    if(this.quality==='high'){const spark=new THREE.Mesh(new THREE.SphereGeometry(.035,5,4),new THREE.MeshBasicMaterial({color:0xffecb4}));spark.position.set(to.x,to.y,to.z);this.scene.add(spark);this.effects.push({object:spark,until:time+.08});}
+    this.shotEffects.spawn(from,to,time,this.quality==='high');
   }
   draw(time:number,dt:number,body:Body|undefined,yaw:number,pitch:number,playing:boolean,ads:boolean,sprint:boolean,reloading:number,alive:boolean,players:PlayerState[],selfId:string,correction:THREE.Vector3,showPreview:boolean){
     this.renderer.info.reset();
     this.world.update(time);
+    this.shotEffects.update(time);
     for(const e of this.effects)if(e.until<time){this.scene.remove(e.object);this.disposeObject(e.object);}this.effects=this.effects.filter(e=>e.until>=time);
     for(const effect of this.effects)if(effect.object.userData.burst){const age=time-effect.object.userData.start;effect.object.scale.setScalar(1+age*5);((effect.object as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity=Math.max(0,(effect.until-time)*3);}
     for(const kind of ['frag','flash'] as const){
@@ -185,23 +188,28 @@ export class GameView {
       mesh.instanceMatrix.needsUpdate=true;
     }
     const ids=new Set(players.map(p=>p.id)),ownTeam=players.find(p=>p.id===selfId)?.team;
-    for(const [id,model]of this.soldiers)if(!ids.has(id)){this.scene.remove(model);this.disposeObject(model);this.soldiers.delete(id);}
+    for(const [id,actor]of this.actors)if(!ids.has(id)){
+      if(actor.current)this.scene.remove(actor.current);
+      for(const {model}of actor.variants.values())this.disposeObject(model);
+      this.soldiers.delete(id);this.actors.delete(id);
+    }
     for(const p of players){
       if(p.id===selfId)continue;
-      let model=this.soldiers.get(p.id);
+      let actor=this.actors.get(p.id);
+      if(!actor){actor=new RemoteActor(p.bot?0x6c715b:0x536759);this.actors.set(p.id,actor);}
+      const previous=actor.current;
       const distance=body?Math.hypot(p.body.x-body.x,p.body.z-body.z):30;
-      const lowDetail=distance>(this.quality==='low'?(model?.userData.lowDetail?5:8):(model?.userData.lowDetail?10:14));
-      if(model&&model.userData.lowDetail!==lowDetail){this.scene.remove(model);this.disposeObject(model);this.soldiers.delete(p.id);model=undefined;}
-      if(!model){model=buildSoldier(p.bot?0x6c715b:0x536759,false,lowDetail);this.soldiers.set(p.id,model);this.scene.add(model);}
+      const lowDetail=useDistantActor(distance,!!previous?.userData.lowDetail,this.quality,this.camera.fov);
+      const model=actor.select(lowDetail);
+      if(model!==previous){if(previous)this.scene.remove(previous);this.scene.add(model);this.soldiers.set(p.id,model);}
       const shadows=this.quality==='high'&&distance<20;
-      if(model.userData.shadows!==shadows){model.traverse(o=>{if(o instanceof THREE.Mesh)o.castShadow=shadows;});model.userData.shadows=shadows;}
+      actor.setShadows(shadows);
       model.visible=playing&&p.hp>0;if(!model.visible)continue;
       model.position.set(p.body.x,p.body.y,p.body.z);model.rotation.y=p.body.yaw;
       setSoldierTeam(model,p.team??null,!!ownTeam&&p.team===ownTeam);
-      const poseInterval=this.quality==='low'&&distance>12?1/20:0;
+      const poseInterval=this.quality==='low'&&lowDetail&&distance>12?1/20:0;
       if(time-(model.userData.lastPose??-1)>=poseInterval){poseSoldier(model,p.body,time,Math.min(.1,time-(model.userData.lastPose??time-dt)));model.userData.lastPose=time;}
-      const equipped=weaponForSlot(p.loadout,p.slot),anchor=model.getObjectByName('weaponAnchor')!;
-      if(model.userData.weapon!==equipped){const old=anchor.getObjectByName('heldWeapon');if(old){anchor.remove(old);this.disposeObject(old);}const held=buildWeapon(equipped,false,lowDetail);held.name='heldWeapon';held.scale.setScalar(.86);held.traverse(o=>{if(o instanceof THREE.Mesh)o.castShadow=shadows;});anchor.add(held);model.userData.weapon=equipped;}
+      actor.setWeapon(weaponForSlot(p.loadout,p.slot));
     }
     for(const {flag,base,state}of this.objectives.values()){
       base.visible=playing;flag.visible=playing&&state.carrier!==this.objectiveSelf;
@@ -265,8 +273,8 @@ export class GameView {
     if(showPreview&&this.previewModel&&this.previewRenderer&&(this.quality==='high'||time-this.lastPreviewUpdate>=1/30)){this.previewModel.rotation.y=-.85+Math.sin(time*.4)*.075;this.previewModel.rotation.z=-.08;this.previewRenderer.render(this.previewScene,this.previewCamera);this.lastPreviewUpdate=time;}
   }
   private disposeObject(o:THREE.Object3D){
-    releaseModel(o);const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();
-    o.traverse(child=>{const m=child as THREE.Mesh;if(m instanceof THREE.SkinnedMesh)m.skeleton.dispose();if(m.geometry&&!m.geometry.userData.shared)geometries.add(m.geometry);if(m.material)for(const mat of(Array.isArray(m.material)?m.material:[m.material]))materials.add(mat);});
-    geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
+    releaseModel(o);const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),skeletons=new Set<THREE.Skeleton>();
+    o.traverse(child=>{const m=child as THREE.Mesh;if(m instanceof THREE.SkinnedMesh)skeletons.add(m.skeleton);if(m.geometry&&!m.geometry.userData.shared)geometries.add(m.geometry);if(m.material)for(const mat of(Array.isArray(m.material)?m.material:[m.material]))materials.add(mat);});
+    skeletons.forEach(s=>s.dispose());geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
   }
 }

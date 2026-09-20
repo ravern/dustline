@@ -1,0 +1,38 @@
+{
+  "generator": "OpenAI built-in image generation",
+  "processing": "Resized to 1024 square and encoded WebP quality 83, method 6 with cwebp. No semantic postprocessing.",
+  "assets": [
+    {
+      "file": "public/textures/sand.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Sun-bleached desert hardpack with warm pale tan fine sand, subtle wind ripples, embedded small pebbles and dusty compacted patches. Ground scale approximately 3 metres across. Fine grain with mild broad tonal variation, authentic weathering. No large rocks."
+    },
+    {
+      "file": "public/textures/concrete.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Light warm-gray weathered architectural concrete for airport floors, urban walls, and barriers. Fine exposed aggregate, mineral flecks, subtle pores and hairline wear, restrained pale dusty mottling. Approximately 2 metres across. No slab seams, no large cracks, no stains that form an obvious focal point."
+    },
+    {
+      "file": "public/textures/asphalt.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Dark charcoal-gray airport apron and suburban road asphalt. Dense fine aggregate, worn gray bitumen, occasional small pale stones, gentle tire polish and faint hairline crazing. 3 metres across. No road markings, no painted lines, no potholes, no large cracks."
+    },
+    {
+      "file": "public/textures/steel.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Neutral medium gray painted industrial steel sheet. Fine powder-coat texture, restrained small chipped paint revealing dark steel, tiny oxidized brown freckles mostly in scattered subtle areas, micro scratches. 1 metre across. No panel edges, no seams, no bolts, no corrugations, no strong rust patches."
+    },
+    {
+      "file": "public/textures/wood.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Weathered pale gray-brown timber, finely grained sun-bleached wood fibers running vertically, subtle knots and worn grain. One metre across. No board seams or nails; restrained silver driftwood tones suitable for crates, house siding and fences."
+    },
+    {
+      "file": "public/textures/grass.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Close cropped natural lawn with olive green and straw-colored fine grass blades, subtly irregular small patches of dry earth beneath the turf. Approximately two metres across. Realistic slightly dry temperate suburban grass, never neon green. No flowers, no large stones, no shadows."
+    },
+    {
+      "file": "public/textures/terrazzo.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Pale ivory architectural terrazzo floor with fine irregular cream, warm gray and charcoal stone chips embedded in an off-white polished cement binder. Approximately two metres across. Restrained realistic airport interior floor. No tile seams or grout, no reflection or lighting gradients."
+    },
+    {
+      "file": "public/textures/fabric.webp",
+      "prompt": "Use case: photorealistic-natural. Asset type: production game PBR base-color material tile for a high-fidelity browser FPS. Create a single square 1024x1024 seamless, perfectly tileable material texture, viewed straight down orthographically, edge-to-edge. Flat diffuse neutral illumination; color/albedo only, no directional cast shadows, no baked highlights, no perspective, no borders, no vignette, no objects or text. Natural multiscale material detail, restrained realistic contrast, no obvious repeated focal marks. All four edges must join seamlessly when repeated. Neutral light gray tightly woven technical fabric. Fine visible interlaced fibers with subtle thread variation, a little natural abrasion. Approximately half a metre across. Realistic matte tactical canvas and upholstery, no folds, no seams, no stains, no buttons, no pattern beyond fine woven fibers."
+    }
+  ]
+}

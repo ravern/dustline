@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { move, DT } from '../shared/physics.ts';
 import { MAP_BOXES } from '../shared/map.ts';
+import { decodeServerMessage } from '../shared/wire.ts';
 
 const base = process.env.DUSTLINE_URL || 'http://localhost:3000';
 const output = path.resolve('test-results', 'browser');
@@ -85,7 +86,7 @@ async function client(label) {
   const page = await context.newPage();
   const wire = { snapshots:[], messages:[] };
   page.on('pageerror', error => errors.push({client:label,message:error.message}));
-  page.on('websocket', socket => socket.on('framereceived', frame => { try { const m=JSON.parse(String(frame.payload)); if(m.type==='snapshot'){wire.snapshots.push(m);if(wire.snapshots.length>120)wire.snapshots.shift();}else wire.messages.push(m); }catch{} }));
+  page.on('websocket', socket => socket.on('framereceived', frame => { const m=decodeServerMessage(String(frame.payload));if(!m)return;if(m.type==='snapshot'){wire.snapshots.push(m);if(wire.snapshots.length>120)wire.snapshots.shift();}else wire.messages.push(m); }));
   await page.goto(base, { waitUntil:'networkidle' });
   await waitState(page,s=>s.connected,`${label} connected`);
   // Persist an explicit performance setting through the actual UI.

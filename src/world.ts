@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Box } from '../shared/types';
 import { loadAssetKit } from './assets';
 import { createWorldLighting, type WorldLighting } from './lighting';
+import { surfaceTexture, tileWorldMaterial } from './surface-materials';
 
 export interface WorldPropSlot { kind: 'crate' | 'barrier' | 'barrel'; box: Box; root: THREE.Group }
 /** Static architecture is instanced/merged; only dust and a small flag animate. */
@@ -13,40 +14,11 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
  const decoration=new THREE.Group();decoration.name='Exterior scenery';root.add(decoration);
  const lighting=createWorldLighting(scene,map);
  const mats:THREE.Material[]=[];const textures:THREE.Texture[]=[];const geos:THREE.BufferGeometry[]=[];
- const mat=(color:number,roughness=.83,metalness=.05,map?:THREE.Texture)=>{const m=new THREE.MeshStandardMaterial({color,roughness,metalness,...(map?{map}:{})});mats.push(m);return m;};
+ const mat=(color:number,roughness=.83,metalness=.05,map?:THREE.Texture)=>{const m=new THREE.MeshStandardMaterial({color,roughness,metalness,...(map?{map}:{})});tileWorldMaterial(m);mats.push(m);return m;};
  let seed=map.id==='yard'?81723:map.id==='foundry'?17294:51637;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
- const texture=(kind:'sand'|'metal'|'concrete'|'wood'|'cloth')=>{
-  const canvas=document.createElement('canvas');canvas.width=canvas.height=512;const c=canvas.getContext('2d')!;
-  c.fillStyle=kind==='sand'?'#c0ad87':kind==='metal'?'#c5c8c9':kind==='wood'?'#d0cbc2':'#c8ccce';c.fillRect(0,0,512,512);
-  for(let i=0;i<20000;i++){const light=rand()>.52;c.fillStyle=light?'rgba(255,250,224,.065)':'rgba(36,30,21,.045)';const r=kind==='metal'?rand()*2:rand()*3;c.fillRect(rand()*512,rand()*512,r,r);}
-  // Layers at several scales survive both close inspection and distance mipmaps.
-  if(kind==='concrete'||kind==='sand') {
-   for(let i=0;i<1400;i++) {
-    const shade=rand()>.5?'255,250,236':'36,39,33';c.fillStyle=`rgba(${shade},${.035+rand()*.065})`;
-    c.beginPath();c.ellipse(rand()*512,rand()*512,1+rand()*15,1+rand()*8,rand()*Math.PI,0,Math.PI*2);c.fill();
-   }
-   for(let i=0;i<8000;i++){c.fillStyle=rand()>.7?'rgba(232,228,207,.2)':'rgba(33,39,34,.15)';c.fillRect(rand()*512,rand()*512,.5+rand()*1.5,.5+rand()*1.5);}
-  }
-  if(kind==='concrete')for(let i=0;i<7;i++) {
-   let x=rand()*512,y=rand()*512;c.strokeStyle='rgba(44,47,42,.13)';c.lineWidth=.6;c.beginPath();c.moveTo(x,y);
-   for(let n=0;n<5;n++){x+=(rand()-.5)*22;y+=5+rand()*13;c.lineTo(x,y);}c.stroke();
-  }
-  if(kind==='sand')for(let i=0;i<160;i++){c.strokeStyle='rgba(137,105,65,.06)';c.lineWidth=rand()*2+1;c.beginPath();const x=rand()*512,y=rand()*512;c.moveTo(x,y);c.bezierCurveTo(x+16,y-3,x+26,y+5,x+60,y+2);c.stroke();}
-  if(kind==='metal'){
-   for(let i=0;i<60;i++){const x=rand()*512;c.strokeStyle='rgba(46,51,52,.09)';c.lineWidth=.5+rand()*3;c.beginPath();c.moveTo(x,0);c.lineTo(x+rand()*2,512);c.stroke();}
-   // Dull chips, corrosion blooms and rubbed edges stay subtle at distance.
-   for(let i=0;i<240;i++){const x=rand()*512,y=rand()*512;c.fillStyle='rgba(83,62,46,.055)';c.fillRect(x,y,rand()*8+1,rand()*18+1);c.fillStyle='rgba(239,240,225,.10)';c.fillRect(x-1,y-1,rand()*4+1,1);}
-  }
-  if(kind==='cloth'){for(let i=0;i<512;i+=4){c.fillStyle='rgba(255,255,255,.025)';c.fillRect(i,0,1,512);c.fillStyle='rgba(0,0,0,.02)';c.fillRect(0,i,512,1);}}
-  if(kind==='wood'){
-   for(let i=0;i<260;i++){const y=rand()*512;c.strokeStyle=rand()>.4?'rgba(71,57,40,.12)':'rgba(253,244,215,.16)';c.lineWidth=.6+rand()*2;c.beginPath();c.moveTo(0,y);c.bezierCurveTo(128,y+(rand()-.5)*22,360,y+(rand()-.5)*12,512,y);c.stroke();}
-   for(let i=0;i<6;i++){const x=rand()*512,y=rand()*512;c.strokeStyle='rgba(80,57,36,.12)';for(let r=1;r<4;r++){c.beginPath();c.ellipse(x,y,r*12,r*2,.07,0,Math.PI*2);c.stroke();}}
-  }
-  const t=new THREE.CanvasTexture(canvas);t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(kind==='sand'?12:1,kind==='sand'?12:1);t.anisotropy=8;textures.push(t);return t;
- };
- const metalMap=texture('metal'),concreteMap=texture('concrete'),woodMap=texture('wood'),clothMap=texture('cloth');
- const groundMap=texture(map.id==='yard'?'sand':'concrete');groundMap.repeat.set(56,56);
- const sand=mat(map.theme.ground,1,0,groundMap),steel=mat(map.theme.steel,.74,.57,metalMap),yellow=mat(map.theme.accent,.68,.4,metalMap);
+ const metalMap=surfaceTexture('steel'),concreteMap=surfaceTexture('concrete'),woodMap=surfaceTexture('wood'),clothMap=surfaceTexture('fabric');
+ const groundMap=surfaceTexture(map.architecture==='suburb'?'grass':map.id==='yard'||map.architecture==='rig'?'sand':'concrete');
+ const sand=mat(0xffffff,1,0,groundMap),steel=mat(map.theme.steel,.74,.57,metalMap),yellow=mat(map.theme.accent,.68,.4,metalMap);
  const concrete=mat(map.id==='yard'?0xb5ad93:0x9ba6ab,.96,0,concreteMap),dark=mat(map.id==='yard'?0x2e352f:0x3c4e59,.76,.22,metalMap),rust=mat(0x794b31,.87,.35,metalMap),wood=mat(0x86754f,.98,0,woodMap);
  sand.bumpMap=groundMap;sand.bumpScale=.035;concrete.bumpMap=concreteMap;concrete.bumpScale=.035;steel.bumpMap=metalMap;steel.bumpScale=.009;wood.bumpMap=woodMap;wood.bumpScale=.013;
  const silverMetal=mat(0x99998c,.45,.75);
@@ -104,9 +76,9 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
   const painted=['house-wall','house-header','house-sill','garage-wall','shop-wall','shop-roof','terminal-roof','house-roof','house-floor','house-sofa','house-bed','house-counter','plane-wall','plane-floor','plane-header','plane-frame','plane-wing','plane-roof','plane-bin','plane-seat','vehicle-floor','vehicle-wall','vehicle-roof','terrain','terrain-step'];
   if(!painted.includes(b.kind))return;
   const isWood=['house-wall','house-header','house-sill','house-counter'].includes(b.kind),terrain=b.kind.startsWith('terrain');
-  const aircraft=b.kind.startsWith('plane-'),fabric=b.kind==='plane-seat'||b.kind==='plane-floor';
+  const aircraft=b.kind.startsWith('plane-'),fabric=['plane-seat','plane-floor','house-sofa','house-bed'].includes(b.kind);
   const key=`${fabric?'fabric':aircraft?'aircraft':isWood?'siding':terrain?'earth':'paint'}/${b.color??0xb9c4c4}`;let material=architectureMaterials.get(key);
-  if(!material){const albedo=fabric?clothMap:aircraft?undefined:isWood?woodMap:concreteMap;material=mat(b.color??0xb9c4c4,fabric||terrain?1:.94,0,albedo);if(albedo){material.bumpMap=albedo;material.bumpScale=fabric?.001:terrain?.045:.012;}architectureMaterials.set(key,material);}
+  if(!material){const albedo=fabric?clothMap:aircraft?metalMap:isWood?woodMap:terrain?groundMap:concreteMap;material=mat(b.color??0xb9c4c4,fabric||terrain?1:.94,0,albedo);if(albedo){material.bumpMap=albedo;material.bumpScale=fabric?.001:terrain?.045:.012;}architectureMaterials.set(key,material);}
   return material;
  }
  function perimeter(b:Box){
@@ -376,8 +348,8 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
   for(const x of [-1,1])for(const z of [-1,1])beam(steel,new THREE.Vector3(x*.6,4,z*.6),new THREE.Vector3(x*.25,12,z*.25),.08);
  }
  function arenaSurface(){
-  const roadMap=texture('concrete');roadMap.repeat.set(2,12);
-  const paint=mat(map.id==='relay'?0xb1c3bc:0xc8b897,.95,0),asphalt=mat(map.id==='yard'?0x9d947d:map.id==='foundry'?0x536572:0x677876,1,0,roadMap);asphalt.bumpMap=roadMap;asphalt.bumpScale=.018;
+  const roadMap=surfaceTexture('asphalt');
+  const paint=mat(map.id==='relay'?0xb1c3bc:0xc8b897,.95,0),asphalt=mat(0xd9dde0,1,0,roadMap);asphalt.bumpMap=roadMap;asphalt.bumpScale=.018;
   const contactCanvas=document.createElement('canvas');contactCanvas.width=contactCanvas.height=128;const context=contactCanvas.getContext('2d')!;
   const gradient=context.createRadialGradient(64,64,12,64,64,64);gradient.addColorStop(0,'rgba(12,20,18,.48)');gradient.addColorStop(.6,'rgba(12,20,18,.26)');gradient.addColorStop(1,'rgba(12,20,18,0)');context.fillStyle=gradient;context.fillRect(0,0,128,128);
   const contactTexture=new THREE.CanvasTexture(contactCanvas);textures.push(contactTexture);
@@ -388,19 +360,19 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
   const half=map.size/2;
   if(map.footprint){
    if(map.architecture==='suburb'){
-    const grass=mat(0x6e8958,1,0,groundMap),street=mat(0x424c4e,1,0,concreteMap);
+    const grass=mat(0xffffff,1,0,surfaceTexture('grass')),street=asphalt;
     for(const region of map.footprint)box(grass,region.x,-.012,region.z,region.w-.2,.02,region.d-.2);
     box(street,0,.002,0,15,.015,78);
     for(const s of [-1,1]){box(concrete,s*8,.012,0,1,.015,78);box(concrete,s*14,.012,s*25,12,.015,3);}
    }else if(map.architecture==='airport'){
-    const tile=mat(0xc5c6b9,.95,0,concreteMap),apron=mat(0x55616a,1,0,concreteMap);
+    const tile=mat(0xf2f2ed,.54,0,surfaceTexture('terrazzo')),apron=asphalt;
     box(tile,-18,-.012,-6,39.8,.02,79.8);box(apron,21,-.012,19,37.8,.02,29.8);
     for(let z=-44;z<33;z+=3)box(colored(0xa4afaf),-18,.003,z,39,.008,.017);
     for(let x=-35;x<2;x+=3)box(colored(0xa4afaf),x,.003,-6,.017,.008,79);
     for(let z=-43;z<30;z+=4)box(yellow,-18,.013,z,.12,.018,1.5);
     for(const x of [10,18,26,34])box(yellow,x,.011,19,.1,.02,25);
    }else{
-    const gravel=mat(0xaa9270,1,0,groundMap);for(const region of map.footprint)box(gravel,region.x,-.012,region.z,region.w-.2,.02,region.d-.2);
+    const gravel=mat(0xffffff,1,0,groundMap);for(const region of map.footprint)box(gravel,region.x,-.012,region.z,region.w-.2,.02,region.d-.2);
     box(asphalt,0,.002,5,5.5,.015,65);
     for(const x of [-3,3])for(let z=-33;z<36;z+=3)box(paint,x,.014,z,.12,.018,1.4);
    }
@@ -600,7 +572,7 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
    material.map=isWood?woodMap:isConcrete?concreteMap:metalMap;
    material.bumpMap=material.map;material.bumpScale=isWood?.018:isConcrete?.028:.009;
    if(map.id!=='yard'&&/powder coat/i.test(original.name))material.color.setHex(map.id==='relay'?0x5d7782:0x62717d);
-   material.metalness=Math.min(material.metalness,.45);material.needsUpdate=true;mats.push(material);surfaceMaterials.set(original,material);return material;
+   tileWorldMaterial(material);material.metalness=Math.min(material.metalness,.45);material.needsUpdate=true;mats.push(material);surfaceMaterials.set(original,material);return material;
   };
   for(const kind of ['crate','barrier','barrel'] as const){
    const slots=propSlots.filter(slot=>slot.kind===kind),source=kit.getObjectByName(kind);
@@ -620,14 +592,24 @@ export function buildWorld(scene:THREE.Scene,map:MapDefinition=getMap('yard')):{
       .multiply(normalization).multiply(part.matrixWorld);
      instances.setMatrixAt(i,transform);
     });
-    instances.castShadow=true;instances.receiveShadow=true;instances.computeBoundingSphere();root.add(instances);
+    instances.castShadow=true;instances.receiveShadow=true;instances.computeBoundingSphere();root.add(instances);instances.updateMatrix();instances.matrixAutoUpdate=false;
    }
    for(const slot of slots)slot.root.visible=false;
   }
+  qualityMaterials();
  }).catch(()=>{/* Procedural collision-sized fallbacks stay usable offline. */});
+ // These transforms never change; flag and dust animate vertex buffers only.
+ root.traverse(node=>{node.updateMatrix();node.matrixAutoUpdate=false;});
+ const bumpMaps=new Map<THREE.MeshStandardMaterial,THREE.Texture>();
+ function qualityMaterials(){for(const material of mats){
+  if(!(material instanceof THREE.MeshStandardMaterial))continue;
+  if(material.bumpMap&&!bumpMaps.has(material))bumpMaps.set(material,material.bumpMap);
+  const next=quality==='high'?(bumpMaps.get(material)??null):null;
+  if(material.bumpMap!==next){material.bumpMap=next;material.needsUpdate=true;}
+ }}
  let previous=0;
  return {root,map,propSlots,lighting,
-  setQuality(value){quality=value;decoration.visible=value==='high';particles.visible=value==='high';flag.visible=value==='high';},
+  setQuality(value){quality=value;decoration.visible=value==='high';particles.visible=value==='high';flag.visible=value==='high';qualityMaterials();},
   update(time:number){
    const dt=previous?Math.min(.05,time-previous):0;previous=time;
    if(quality==='low')return;

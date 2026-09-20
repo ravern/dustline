@@ -1,3 +1,4 @@
+import { collisionIndex } from '../shared/collision.ts';
 import type { MapDefinition } from '../shared/map.ts';
 import type { Box, GrenadeKind, GrenadeState, Vec3 } from '../shared/types.ts';
 
@@ -27,7 +28,7 @@ function sweepBox(position: Vec3, delta: Vec3, box: Box): { time: number; normal
 }
 
 /** Fixed server-time step; input batches never advance projectile time. */
-export function advanceGrenade(grenade: GrenadeState, dt: number, map: MapDefinition) {
+export function advanceGrenade(grenade: GrenadeState, dt: number, map: MapDefinition, index=collisionIndex(map)) {
   const p = grenade.position, v = grenade.velocity;
   v.y -= 20 * dt;
   let remaining = dt;
@@ -37,7 +38,7 @@ export function advanceGrenade(grenade: GrenadeState, dt: number, map: MapDefini
     if (delta.y < 0 && p.y + delta.y < GRENADE_RADIUS) {
       hit = { time: Math.max(0, (GRENADE_RADIUS - p.y) / delta.y), normal: { x: 0, y: 1, z: 0 } };
     }
-    for (const box of map.boxes) {
+    for (const box of index.query(Math.min(p.x,p.x+delta.x)-GRENADE_RADIUS,Math.min(p.y,p.y+delta.y)-GRENADE_RADIUS,Math.min(p.z,p.z+delta.z)-GRENADE_RADIUS,Math.max(p.x,p.x+delta.x)+GRENADE_RADIUS,Math.max(p.y,p.y+delta.y)+GRENADE_RADIUS,Math.max(p.z,p.z+delta.z)+GRENADE_RADIUS)) {
       const candidate = sweepBox(p, delta, box);
       if (candidate && (!hit || candidate.time < hit.time)) hit = candidate;
     }

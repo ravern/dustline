@@ -11,17 +11,36 @@ import './style.css';
 import * as THREE from 'three';
 import { ACTIONS, CONTROLS, actionForCode, bindingError, controlLabel, defaultBindings, held, normalizeCode, readBindings, type Action } from './controls';
 import { Network } from './network';
+import { interpolatePlayers, snapshotIndex } from './interpolation';
 import { readLoadouts, sameLoadout, PRIMARY_WEAPONS, type LoadoutPreset } from './loadouts';
 import { AudioEngine } from './audio';
 import { GameView } from './renderer';
 import { $, mountUI, paintLoadout, paintLobby, paintRooms, paintScoreboard, timer, escapeHTML } from './ui';
 import { DT, move } from '../shared/physics';
-import { getMap, type MapId } from '../shared/map';
+import { collisionIndex, type CollisionIndex } from '../shared/collision';
+import { getMap, type MapId, type MapDefinition } from '../shared/map';
 import { MODES } from '../shared/types';
 import { WEAPONS, weaponForSlot } from '../shared/weapons';
 import type { Body, GameEvent, GameMode, Input, Loadout, PlayerState, PrimaryId, SecondaryId, WeaponId, RoomInfo, ServerMessage, Slot, Snapshot } from '../shared/types';
 
 mountUI();
+// Only the HUD uses these setters: stable elements and rendered values avoid
+// replacing identical text/markup or invalidating styles every animation frame.
+const hudElements=new Map<string,HTMLElement>(),hudValues=new Map<string,string>();
+function hudElement(id:string){let element=hudElements.get(id);if(!element){element=$(id);hudElements.set(id,element);}return element;}
+function changedHUD(key:string,value:string){if(hudValues.get(key)===value)return false;hudValues.set(key,value);return true;}
+function hudText(id:string,value:string){if(changedHUD(`${id}:text`,value))hudElement(id).textContent=value;}
+function hudHTML(id:string,value:string){if(changedHUD(`${id}:html`,value))hudElement(id).innerHTML=value;}
+function hudStyle(id:string,property:string,value:string){if(changedHUD(`${id}:${property}`,value))hudElement(id).style.setProperty(property,value);}
+function hudClass(id:string,name:string,on:boolean){const element=hudElement(id);if(element.classList.contains(name)!==on)element.classList.toggle(name,on);}
+const minimap=$<HTMLCanvasElement>('minimap'),minimapContext=minimap.getContext('2d')!;
+const minimapBackground=document.createElement('canvas');minimapBackground.width=minimap.width;minimapBackground.height=minimap.height;
+let minimapMap:ReturnType<typeof getMap>|undefined;
+let scoreboardPlayers:PlayerState[]=[],scoreboardSelf='';
+function updateScoreboard(players:PlayerState[]){
+  const changed=scoreboardSelf!==net.id||players.length!==scoreboardPlayers.length||players.some((p,i)=>{const old=scoreboardPlayers[i];return p.id!==old.id||p.name!==old.name||p.team!==old.team||p.bot!==old.bot||p.kills!==old.kills||p.deaths!==old.deaths||p.captures!==old.captures;});
+  if(changed){paintScoreboard(players,net.id);scoreboardPlayers=players;scoreboardSelf=net.id;}
+}
 const audio=new AudioEngine();
 const net=new Network();
 let view:GameView;
@@ -112,11 +131,11 @@ function leaveRoom(){net.send({type:'leave'});}
 function openSettings(){settingsOpen=true;if(document.pointerLockElement)document.exitPointerLock();$('settings').classList.remove('hidden');syncOverlays();}
 function closeSettings(){captureBinding=undefined;paintBindings();resetControls();settingsOpen=false;$('settings').classList.add('hidden');syncOverlays();save();}
 function paintActiveLoadout(){
-  $('active-primary').textContent=WEAPONS[loadout.primary].shortName;$('active-secondary').textContent=`${WEAPONS[loadout.secondary].shortName} / KNIFE`;
-  $('active-loadout-number').textContent=String(activePreset+1).padStart(2,'0');
+  hudText('active-primary',WEAPONS[loadout.primary].shortName);hudText('active-secondary',`${WEAPONS[loadout.secondary].shortName} / KNIFE`);
+  hudText('active-loadout-number',String(activePreset+1).padStart(2,'0'));
   const queued=!!self&&!sameLoadout(self.loadout,loadout);
   const status=queued?`NEXT SPAWN · ${WEAPONS[loadout.primary].shortName} / ${WEAPONS[loadout.secondary].shortName}`:'';
-  $('pending-loadout').textContent=status;$('respawn-loadout-status').textContent=status;
+  hudText('pending-loadout',status);hudText('respawn-loadout-status',status);
 }
 function selectPreset(index:number){
   draftPreset=index;draftLoadout=draftPresets[index].weapons;
@@ -308,7 +327,7 @@ function receiveSnapshot(next:Snapshot){
   if(lastArrival&&next.matchId===snapshot?.matchId){const jitter=Math.abs((arrival-lastArrival)-(next.time-lastServerTime));arrivalJitter=arrivalJitter*.9+Math.min(.15,jitter)*.1;}
   lastArrival=arrival;lastServerTime=next.time;lastSnapshotReceived=performance.now();
   view.setMap(next.map);view.setObjectives(next.flags,net.id);
-  const previous=self;const incoming=next.players.find(p=>p.id===net.id);if(!incoming)return;
+  const previous=self;const incoming=snapshotIndex(next).players.get(net.id);if(!incoming)return;
   const entering=phase==='menu'||resuming||snapshot?.matchId!==next.matchId;resuming=false;const respawned=!!previous&&previous.hp<=0&&incoming.hp>0;
   snapshot=next;self=incoming;paintActiveLoadout();view.setGrenades(next.grenades);
   predictedShots=predictedShots.filter(shot=>shot.seq>incoming.ack);
@@ -318,7 +337,7 @@ function receiveSnapshot(next:Snapshot){
   pending=pending.filter(input=>input.seq>incoming.ack);
   const before=body?{...body}:undefined;
   body={...incoming.body};
-  if(incoming.hp>0){for(const input of pending)body=move(body,input,DT,activeMap());}
+  if(incoming.hp>0&&pending.length){const map=activeMap(),index=collisionIndex(map);for(const input of pending)body=move(body,input,DT,map,index);}
   if(before&&!entering&&!respawned){const delta=new THREE.Vector3(before.x-body.x,before.y-body.y,before.z-body.z);correctionMagnitude=delta.length();if(delta.length()<1.5)correction.add(delta);else correction.set(0,0,0);}
   if(pending.length>120){pending=[];outgoing=[];body={...incoming.body};correction.set(0,0,0);}
   history.push(next);history=history.filter(s=>s.time>next.time-.7).slice(-18);
@@ -326,11 +345,11 @@ function receiveSnapshot(next:Snapshot){
   if(incoming.reloading>net.now()&&(!previous||previous.reloading<=net.now())){reloadStarted=net.now();}
   for(const event of next.events){if(event.id>lastEvent){if(event.time>net.now()-1.5)handleEvent(event);lastEvent=event.id;}}
   phase=next.state==='finished'?'finished':'playing';
-  if(phase==='finished'){matchLoadoutOpen=false;resetControls();if(document.pointerLockElement)document.exitPointerLock();paintScoreboard(next.players,net.id);const winner=[...next.players].sort((a,b)=>b.kills-a.kills||a.deaths-b.deaths)[0];$('winner-text').textContent=next.mode!=='ffa'?(next.winner?`${next.winner.toUpperCase()} TEAM WINS · ${next.teamScores.red} — ${next.teamScores.blue}`:`DRAW · ${next.teamScores.red} — ${next.teamScores.blue}`):next.winner&&winner?`${winner.name} wins with ${winner.kills} eliminations.`:'Match drawn.';}
+  if(phase==='finished'){matchLoadoutOpen=false;resetControls();if(document.pointerLockElement)document.exitPointerLock();updateScoreboard(next.players);const winner=[...next.players].sort((a,b)=>b.kills-a.kills||a.deaths-b.deaths)[0];$('winner-text').textContent=next.mode!=='ffa'?(next.winner?`${next.winner.toUpperCase()} TEAM WINS · ${next.teamScores.red} — ${next.teamScores.blue}`:`DRAW · ${next.teamScores.red} — ${next.teamScores.blue}`):next.winner&&winner?`${winner.name} wins with ${winner.kills} eliminations.`:'Match drawn.';}
   if(entering||respawned||incoming.hp!==previous?.hp||phase==='finished')syncOverlays();
 }
 function handleEvent(e:GameEvent){
-  const now=performance.now()/1000;const player=snapshot?.players.find(p=>p.id===e.player);const target=snapshot?.players.find(p=>p.id===e.target);
+  const now=performance.now()/1000,index=snapshot?snapshotIndex(snapshot).players:undefined;const player=e.player?index?.get(e.player):undefined,target=e.target?index?.get(e.target):undefined;
   if(e.type==='shot'&&e.from&&e.to){
     if(e.player!==net.id&&body){const distance=Math.hypot(e.from.x-body.x,e.from.z-body.z);audio.shot(e.weapon||'ak47',distance,Math.sin(Math.atan2(e.from.x-body.x,e.from.z-body.z)-yaw));view.tracer(e.from,e.to,now);}
     // Local shot audio and muzzle kick were already predicted with the input.
@@ -352,7 +371,7 @@ function handleEvent(e:GameEvent){
     if(e.target===net.id)$('killer-name').textContent=`Eliminated by ${killer} · ${e.grenade==='frag'?'Frag grenade':WEAPONS[e.weapon||'knife'].name}`;
   }
 }
-function fixedStep(){
+function fixedStep(map:MapDefinition,index:CollisionIndex|undefined){
   if(phase!=='playing'||!self||!body||!net.connected||resuming)return;
   const active=!!document.pointerLockElement&&self.hp>0&&!settingsOpen&&!matchLoadoutOpen;
   const now=net.now();
@@ -363,7 +382,7 @@ function fixedStep(){
   const sprint=active&&held(bindings,keys,'sprint')&&!firing&&!aiming;
   const input:Input={seq:seq++,yaw,pitch,forward:active?Number(held(bindings,keys,'forward'))-Number(held(bindings,keys,'backward')):0,right:active?Number(held(bindings,keys,'right'))-Number(held(bindings,keys,'left')):0,jump:active&&held(bindings,keys,'jump'),sprint,crouch:active&&held(bindings,keys,'crouch'),ads:aiming,fire:firing,reload:active&&held(bindings,keys,'reload'),frag:active&&(queuedGrenade==='frag'||held(bindings,keys,'frag')),flash:active&&(queuedGrenade==='flash'||held(bindings,keys,'flash')),slot,time:now,viewTime:renderTime(),matchId:snapshot?.matchId};
   queuedGrenade=undefined;
-  if(self.hp>0){body=move(body,input,DT,activeMap());pending.push(input);if(pending.length>120){pending=pending.slice(-120);}}
+  if(self.hp>0){body=move(body,input,DT,map,index);pending.push(input);if(pending.length>120){pending=pending.slice(-120);}}
   if(body.vault)predictedReload=undefined;
   outgoing.push(input);
   if(outgoing.length>=2){net.send({type:'inputs',inputs:outgoing});outgoing=[];}
@@ -385,55 +404,47 @@ function fixedStep(){
   wasGrounded=body.grounded;previousStance=body.stance;
 }
 function interpolatedPlayers():PlayerState[]{
-  if(!snapshot)return[];
-  const targetTime=renderTime();
-  let a=history[0]||snapshot,b=a;
-  for(const h of history){if(h.time<=targetTime)a=h;if(h.time>=targetTime){b=h;break;}b=h;}
-  const ratio=b.time>a.time?THREE.MathUtils.clamp((targetTime-a.time)/(b.time-a.time),0,1):0;
-  return snapshot.players.map(p=>{
-    if(p.id===net.id)return p;
-    const pa=a.players.find(x=>x.id===p.id),pb=b.players.find(x=>x.id===p.id);
-    if(!pa||!pb||pa.hp<=0||pb.hp<=0||pa.deaths!==pb.deaths||Math.hypot(pa.body.x-pb.body.x,pa.body.z-pb.body.z)>5)return p;
-    const angle=Math.atan2(Math.sin(pb.body.yaw-pa.body.yaw),Math.cos(pb.body.yaw-pa.body.yaw));
-    return{...p,body:{...pa.body,x:THREE.MathUtils.lerp(pa.body.x,pb.body.x,ratio),y:THREE.MathUtils.lerp(pa.body.y,pb.body.y,ratio),z:THREE.MathUtils.lerp(pa.body.z,pb.body.z,ratio),yaw:pa.body.yaw+angle*ratio}};
-  });
+  return snapshot?interpolatePlayers(snapshot,history,renderTime(),net.id):[];
 }
 function drawMinimap(){
   if(!body||!snapshot)return;
-  const map=activeMap(),MAP_SIZE=map.size;const ctx=$<HTMLCanvasElement>('minimap').getContext('2d')!;const s=176/MAP_SIZE;
-  ctx.clearRect(0,0,176,176);ctx.fillStyle='#08110de8';ctx.fillRect(0,0,176,176);
-  if(map.outline){ctx.beginPath();map.outline.forEach((point,index)=>{const x=(point.x+MAP_SIZE/2)*s,z=(point.z+MAP_SIZE/2)*s;if(index===0)ctx.moveTo(x,z);else ctx.lineTo(x,z);});ctx.closePath();ctx.fillStyle='#243328';ctx.fill();ctx.strokeStyle='#aec39780';ctx.stroke();}
-  ctx.strokeStyle='#8ea57916';ctx.lineWidth=1;for(let i=0;i<176;i+=22){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,176);ctx.moveTo(0,i);ctx.lineTo(176,i);ctx.stroke();}
-  for(const box of map.boxes){ctx.fillStyle=box.y>3?'#66755490':'#83936b85';ctx.fillRect((box.x-box.w/2+MAP_SIZE/2)*s,(box.z-box.d/2+MAP_SIZE/2)*s,Math.max(1,box.w*s),Math.max(1,box.d*s));}
-  for(const p of snapshot.players){if(p.id===net.id||p.hp<=0)continue;const recentlyFired=snapshot.events.some(e=>e.type==='shot'&&e.player===p.id&&snapshot!.time-e.time<1.1);const friendly=!!self?.team&&p.team===self.team;if(!recentlyFired&&!friendly)continue;ctx.fillStyle=friendly?'#7bc9ff':'#ed825b';ctx.beginPath();ctx.arc((p.body.x+MAP_SIZE/2)*s,(p.body.z+MAP_SIZE/2)*s,2.5,0,Math.PI*2);ctx.fill();}
+  const map=activeMap(),MAP_SIZE=map.size,ctx=minimapContext,s=176/MAP_SIZE;
+  if(minimapMap!==map){
+    const background=minimapBackground.getContext('2d')!;background.clearRect(0,0,176,176);background.fillStyle='#08110de8';background.fillRect(0,0,176,176);
+    if(map.outline){background.beginPath();map.outline.forEach((point,index)=>{const x=(point.x+MAP_SIZE/2)*s,z=(point.z+MAP_SIZE/2)*s;if(index===0)background.moveTo(x,z);else background.lineTo(x,z);});background.closePath();background.fillStyle='#243328';background.fill();background.strokeStyle='#aec39780';background.stroke();}
+    background.strokeStyle='#8ea57916';background.lineWidth=1;for(let i=0;i<176;i+=22){background.beginPath();background.moveTo(i,0);background.lineTo(i,176);background.moveTo(0,i);background.lineTo(176,i);background.stroke();}
+    for(const box of map.boxes){background.fillStyle=box.y>3?'#66755490':'#83936b85';background.fillRect((box.x-box.w/2+MAP_SIZE/2)*s,(box.z-box.d/2+MAP_SIZE/2)*s,Math.max(1,box.w*s),Math.max(1,box.d*s));}
+    minimapMap=map;
+  }
+  ctx.clearRect(0,0,176,176);ctx.drawImage(minimapBackground,0,0);
+  const shooters=snapshotIndex(snapshot).shooters;
+  for(const p of snapshot.players){if(p.id===net.id||p.hp<=0)continue;const friendly=!!self?.team&&p.team===self.team;if(!shooters.has(p.id)&&!friendly)continue;ctx.fillStyle=friendly?'#7bc9ff':'#ed825b';ctx.beginPath();ctx.arc((p.body.x+MAP_SIZE/2)*s,(p.body.z+MAP_SIZE/2)*s,2.5,0,Math.PI*2);ctx.fill();}
   for(const f of snapshot.flags){ctx.fillStyle=f.team==='red'?'#ff947c':'#7bc9ff';const x=(f.position.x+MAP_SIZE/2)*s,z=(f.position.z+MAP_SIZE/2)*s;ctx.fillRect(x-3,z-3,6,6);ctx.strokeStyle='#fff';ctx.strokeRect(x-3,z-3,6,6);}
   ctx.save();ctx.translate((body.x+MAP_SIZE/2)*s,(body.z+MAP_SIZE/2)*s);ctx.rotate(-yaw);ctx.fillStyle='#d0f778';ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(3.5,4);ctx.lineTo(0,2);ctx.lineTo(-3.5,4);ctx.closePath();ctx.fill();ctx.restore();
 }
 function updateHUD(time:number){
   if(!self||!body||!snapshot)return;
-  const weapon=WEAPONS[weaponForSlot(self.loadout,slot)];const now=net.now();
-  $('team-score').classList.toggle('hidden',snapshot.mode==='ffa');
-  $('team-score').innerHTML=`<span class="red"><small>RED${self.team==='red'?' · YOU':''}</small>${snapshot.teamScores.red}</span><span class="blue"><small>BLUE${self.team==='blue'?' · YOU':''}</small>${snapshot.teamScores.blue}</span>`;
-  $('objective-hud').classList.toggle('hidden',snapshot.mode!=='ctf');
-  if(snapshot.mode==='ctf')$('objective-hud').innerHTML=snapshot.flags.map(f=>{const carrier=snapshot!.players.find(p=>p.id===f.carrier);const state=f.carrier===net.id?'YOU HAVE THE FLAG':carrier?`CARRIED BY ${escapeHTML(carrier.name)}`:f.returnAt>0?`DROPPED · ${Math.ceil(Math.max(0,f.returnAt-now))}s`:'AT BASE';return `<span class="${f.team} ${f.carrier===net.id?'carrying':''}"><strong>${f.team.toUpperCase()} FLAG</strong>${state}</span>`;}).join('');
-  $('match-timer').textContent=timer(snapshot.endsAt-now);$('hud-ping').textContent=`${Math.round(net.rtt)} MS`;$('hud-fps').textContent=`${Math.round(fps)} FPS`;
-  $('health').textContent=String(self.hp);$('health-bar').style.width=`${self.hp}%`;$('health-bar').style.background=self.hp<35?'#ee9476':'#d0f778';
-  $('hud-name').textContent=self.name;$('personal-score').textContent=`${self.kills} K / ${self.deaths} D`;
-  $('stance').textContent=self.hp<=0?'KIA':body.vault?'VAULTING':!body.grounded?'AIRBORNE':body.stance==='slide'?'SLIDING':body.stance==='crouch'?'CROUCHED':Math.hypot(body.vx,body.vz)>7?'SPRINTING':self.protectedUntil>now?'PROTECTED':'READY';
-  $('hud-secondary').textContent=WEAPONS[self.loadout.secondary].shortName;$('frag-count').textContent=String(self.grenades.frag);$('flash-count').textContent=String(self.grenades.flash);
-  $('hud-weapon').textContent=weapon.shortName;$('ammo').textContent=weapon.id==='knife'?'∞':String(availableAmmo(slot)).padStart(2,'0');$('reserve').textContent=String(self.reserve[slot]);
-  $('ammo').style.color=weapon.id!=='knife'&&availableAmmo(slot)<=Math.ceil(weapon.mag*.2)?'#efb680':'';
-  [0,1,2].forEach(i=>$(`slot-${i}`).classList.toggle('selected',slot===i));
-  $('scope').classList.toggle('hidden',!(weapon.id==='intervention'&&view.ads>=.999&&self.hp>0));
-  $('crosshair').style.opacity=self.hp<=0?'0':String(1-view.ads);
-  $('crosshair').style.setProperty('--gap',`${7+(held(bindings,keys,'sprint')?5:0)+(Math.hypot(body.vx,body.vz)>1?4:0)+view.kick*90}px`);
+  const weapon=WEAPONS[weaponForSlot(self.loadout,slot)],now=net.now(),ammo=availableAmmo(slot),speed=Math.hypot(body.vx,body.vz);
+  hudClass('team-score','hidden',snapshot.mode==='ffa');
+  if(snapshot.mode!=='ffa')hudHTML('team-score',`<span class="red"><small>RED${self.team==='red'?' · YOU':''}</small>${snapshot.teamScores.red}</span><span class="blue"><small>BLUE${self.team==='blue'?' · YOU':''}</small>${snapshot.teamScores.blue}</span>`);
+  hudClass('objective-hud','hidden',snapshot.mode!=='ctf');
+  if(snapshot.mode==='ctf'){const players=snapshotIndex(snapshot).players;hudHTML('objective-hud',snapshot.flags.map(f=>{const carrier=f.carrier?players.get(f.carrier):undefined;const state=f.carrier===net.id?'YOU HAVE THE FLAG':carrier?`CARRIED BY ${escapeHTML(carrier.name)}`:f.returnAt>0?`DROPPED · ${Math.ceil(Math.max(0,f.returnAt-now))}s`:'AT BASE';return `<span class="${f.team} ${f.carrier===net.id?'carrying':''}"><strong>${f.team.toUpperCase()} FLAG</strong>${state}</span>`;}).join(''));}
+  hudText('match-timer',timer(snapshot.endsAt-now));hudText('hud-ping',`${Math.round(net.rtt)} MS`);hudText('hud-fps',`${Math.round(fps)} FPS`);
+  hudText('health',String(self.hp));hudStyle('health-bar','width',`${self.hp}%`);hudStyle('health-bar','background',self.hp<35?'#ee9476':'#d0f778');
+  hudText('hud-name',self.name);hudText('personal-score',`${self.kills} K / ${self.deaths} D`);
+  hudText('stance',self.hp<=0?'KIA':body.vault?'VAULTING':!body.grounded?'AIRBORNE':body.stance==='slide'?'SLIDING':body.stance==='crouch'?'CROUCHED':speed>7?'SPRINTING':self.protectedUntil>now?'PROTECTED':'READY');
+  hudText('hud-secondary',WEAPONS[self.loadout.secondary].shortName);hudText('frag-count',String(self.grenades.frag));hudText('flash-count',String(self.grenades.flash));
+  hudText('hud-weapon',weapon.shortName);hudText('ammo',weapon.id==='knife'?'∞':String(ammo).padStart(2,'0'));hudText('reserve',String(self.reserve[slot]));
+  hudStyle('ammo','color',weapon.id!=='knife'&&ammo<=Math.ceil(weapon.mag*.2)?'#efb680':'');
+  for(let i=0;i<3;i++)hudClass(`slot-${i}`,'selected',slot===i);
+  hudStyle('crosshair','--gap',`${7+(held(bindings,keys,'sprint')?5:0)+(speed>1?4:0)+view.kick*90}px`);
   const interrupted=performance.now()-lastSnapshotReceived>1800;
-  $('action-notice').textContent=interrupted?'CONNECTION INTERRUPTED':body.vault?'VAULTING':throwUntil()>now?'THROWING':reloadUntil()>now?'RELOADING':weapon.id==='intervention'&&nextLocalShot>now+.2&&now-self.nextFire<1?'CYCLING BOLT':availableAmmo(slot)===0?`PRESS ${bindings.reload.map(controlLabel).join(' / ')} TO RELOAD`:'';
-  $('hitmarker').style.opacity=time<hitUntil?'1':'0';$('kill-notice').style.opacity=time<noticeUntil?'1':'0';
-  const hurt=Math.max(0,1-(time-lastDamageTime)*1.3);$('damage-vignette').style.opacity=String(Math.max(self.hp>0?(100-self.hp)/160:0,hurt*.8));
-  feed=feed.filter(f=>f.until>time);$('killfeed').innerHTML=feed.map(f=>`<div class="feed-line">${f.text}</div>`).join('');
-  $('respawn').classList.toggle('hidden',self.hp>0);$('respawn-count').textContent=String(Math.max(1,Math.ceil(self.respawnAt-now)));
-  if(tabHeld||phase==='finished')paintScoreboard(snapshot.players,net.id);
+  hudText('action-notice',interrupted?'CONNECTION INTERRUPTED':body.vault?'VAULTING':throwUntil()>now?'THROWING':reloadUntil()>now?'RELOADING':weapon.id==='intervention'&&nextLocalShot>now+.2&&now-self.nextFire<1?'CYCLING BOLT':ammo===0?`PRESS ${bindings.reload.map(controlLabel).join(' / ')} TO RELOAD`:'');
+  hudStyle('kill-notice','opacity',time<noticeUntil?'1':'0');
+  const hurt=Math.max(0,1-(time-lastDamageTime)*1.3);hudStyle('damage-vignette','opacity',String(Math.max(self.hp>0?(100-self.hp)/160:0,hurt*.8)));
+  feed=feed.filter(f=>f.until>time);hudHTML('killfeed',feed.map(f=>`<div class="feed-line">${f.text}</div>`).join(''));
+  hudClass('respawn','hidden',self.hp>0);if(self.hp<=0)hudText('respawn-count',String(Math.max(1,Math.ceil(self.respawnAt-now))));
+  if(tabHeld||phase==='finished')updateScoreboard(snapshot.players);
   drawMinimap();
 }
 function animate(ms:number){
@@ -441,7 +452,9 @@ function animate(ms:number){
   fps=THREE.MathUtils.lerp(fps,1/Math.max(.001,dt),.035);
   renderDelay=THREE.MathUtils.damp(renderDelay,Math.min(.32,Math.max(.1,Math.max(net.rtt,net.latency)/2000+.065+arrivalJitter*2)),5,dt);
   remoteTime=Math.max(remoteTime,net.now()-renderDelay);
-  accumulator+=dt;let steps=0;while(accumulator>=DT&&steps<6){fixedStep();accumulator-=DT;steps++;}
+  accumulator+=dt;
+  const movementMap=activeMap(),movementIndex=accumulator>=DT&&phase==='playing'&&self&&self.hp>0&&body&&net.connected&&!resuming?collisionIndex(movementMap):undefined;
+  let steps=0;while(accumulator>=DT&&steps<6){fixedStep(movementMap,movementIndex);accumulator-=DT;steps++;}
   correction.multiplyScalar(Math.exp(-dt*20));
   const current=weaponForSlot(self?.loadout||loadout,slot);view.setWeapon(current);
   const now=net.now();const aiming=ads&&slot!==2&&!!document.pointerLockElement&&self?.hp!==0&&!!self&&reloadUntil()<=now&&throwUntil()<=now&&!body?.vault&&body?.stance!=='slide';
@@ -450,10 +463,10 @@ function animate(ms:number){
   const reloadProgress=reloading?THREE.MathUtils.clamp(1-(reloadUntil()-now)/WEAPONS[current].reloadTime,0,1):0;
   audio.updateReload(current,reloadProgress);
   view.draw(time,dt,body,yaw,pitch,phase!=='menu',aiming,sprint,reloadProgress,!!self&&self.hp>0,interpolatedPlayers(),net.id,correction,(phase==='menu'||matchLoadoutOpen)&&page==='loadout'&&previewReady);
-  $('scope').classList.toggle('hidden',!(current==='intervention'&&view.ads>=.999&&self&&self.hp>0));
-  $('crosshair').style.opacity=!self||self.hp<=0?'0':String(1-view.ads);
-  $('flash-overlay').style.opacity=String(phase==='playing'&&self&&self.hp>0?Math.min(.98,Math.max(0,self.flashUntil-now)/1.4)*self.flashStrength:0);
-  $('hitmarker').style.opacity=time<hitUntil?'1':'0';
+  hudClass('scope','hidden',!(current==='intervention'&&view.ads>=.999&&self&&self.hp>0));
+  hudStyle('crosshair','opacity',!self||self.hp<=0?'0':String(1-view.ads));
+  hudStyle('flash-overlay','opacity',String(phase==='playing'&&self&&self.hp>0?Math.min(.98,Math.max(0,self.flashUntil-now)/1.4)*self.flashStrength:0));
+  hudStyle('hitmarker','opacity',time<hitUntil?'1':'0');
   if(time-hudTime>(view.quality==='low'?.14:.08)){hudTime=time;updateHUD(time);}
   requestAnimationFrame(animate);
 }

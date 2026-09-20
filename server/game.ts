@@ -1,5 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { getMap, MAPS, type MapId, type MapDefinition } from '../shared/map.ts';
+import { collisionIndex } from '../shared/collision.ts';
 import { route } from './navigation.ts';
 import { MODES } from '../shared/types.ts';
 import { bodyHeight, DT, eyeHeight, move, spawnBody } from '../shared/physics.ts';
@@ -41,16 +42,27 @@ export function validInput(raw: unknown): Input | null {
 /** Ray/AABB intersection distance. Returns null when the box isn't in front of the ray. */
 export function rayBox(origin: Vec3, direction: Vec3, box: Box): number | null {
   let lo = 0, hi = Infinity;
-  for (const [axis, dim] of [['x', 'w'], ['y', 'h'], ['z', 'd']] as const) {
-    const min = box[axis] - box[dim] / 2, max = box[axis] + box[dim] / 2;
-    if (Math.abs(direction[axis]) < 1e-8) { if (origin[axis] < min || origin[axis] > max) return null; }
-    else { const a = (min - origin[axis]) / direction[axis], b = (max - origin[axis]) / direction[axis]; lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b)); if (lo > hi) return null; }
+  // Explicit slabs avoid allocating axis tuples for every bot sight ray.
+  {
+    const min = box.x - box.w / 2, max = box.x + box.w / 2;
+    if (Math.abs(direction.x) < 1e-8) { if (origin.x < min || origin.x > max) return null; }
+    else { const a = (min - origin.x) / direction.x, b = (max - origin.x) / direction.x; lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b)); if (lo > hi) return null; }
+  }
+  {
+    const min = box.y - box.h / 2, max = box.y + box.h / 2;
+    if (Math.abs(direction.y) < 1e-8) { if (origin.y < min || origin.y > max) return null; }
+    else { const a = (min - origin.y) / direction.y, b = (max - origin.y) / direction.y; lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b)); if (lo > hi) return null; }
+  }
+  {
+    const min = box.z - box.d / 2, max = box.z + box.d / 2;
+    if (Math.abs(direction.z) < 1e-8) { if (origin.z < min || origin.z > max) return null; }
+    else { const a = (min - origin.z) / direction.z, b = (max - origin.z) / direction.z; lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b)); if (lo > hi) return null; }
   }
   return hi >= 0 ? lo : null;
 }
-export function worldDistance(origin: Vec3, dir: Vec3, maxDistance: number, map: MapDefinition = getMap('yard')) {
+export function worldDistance(origin: Vec3, dir: Vec3, maxDistance: number, map: MapDefinition = getMap('yard'), index=collisionIndex(map)) {
   let nearest = maxDistance;
-  for (const box of map.boxes) { const hit = rayBox(origin, dir, box); if (hit !== null) nearest = Math.min(nearest, hit); }
+  for (const box of index.ray(origin,dir,maxDistance)) { const hit = rayBox(origin, dir, box); if (hit !== null) nearest = Math.min(nearest, hit); }
   if (dir.y < -.00001) nearest = Math.min(nearest, -origin.y / dir.y);
   return nearest;
 }
@@ -290,7 +302,7 @@ export class Room {
     this.event({ type: 'grenade_throw', player: player.id, grenade: kind, grenadeId: grenade.id, from: { ...grenade.position }, time: now });
     return true;
   }
-  explodeGrenade(grenade: GrenadeState, now: number) {
+  explodeGrenade(grenade: GrenadeState, now: number,index=collisionIndex(this.arena)) {
     // Remove before applying damage: finish() can immediately broadcast a snapshot.
     if (!this.grenades.delete(grenade.id)) return;
     this.event({ type: 'grenade_explode', player: grenade.owner, grenade: grenade.kind, grenadeId: grenade.id, from: { ...grenade.position }, time: now });
@@ -301,7 +313,7 @@ export class Room {
       const d = distance(grenade.position, point), radius = grenade.kind === 'frag' ? FRAG_RADIUS : FLASH_RADIUS;
       if (d >= radius) continue;
       const dir = { x: (point.x - grenade.position.x) / Math.max(d, .001), y: (point.y - grenade.position.y) / Math.max(d, .001), z: (point.z - grenade.position.z) / Math.max(d, .001) };
-      if (d > .001 && worldDistance(grenade.position, dir, d, this.arena) < d - .01) continue;
+      if (d > .001 && worldDistance(grenade.position, dir, d, this.arena,index) < d - .01) continue;
       if (grenade.kind === 'frag') {
         this.damage(target, { id: grenade.owner, team: grenade.team }, 140 * Math.min(1, (FRAG_RADIUS - d) / (FRAG_RADIUS - 2)), now, { grenade: 'frag' });
       } else {
@@ -315,14 +327,14 @@ export class Room {
       }
     }
   }
-  updateGrenades(now: number) {
+  updateGrenades(now: number,index=collisionIndex(this.arena)) {
     for (const grenade of this.grenades.values()) {
       if (this.state !== 'playing') break;
-      if (now >= grenade.detonateAt) this.explodeGrenade(grenade, now);
-      else advanceGrenade(grenade, DT, this.arena);
+      if (now >= grenade.detonateAt) this.explodeGrenade(grenade, now,index);
+      else advanceGrenade(grenade, DT, this.arena,index);
     }
   }
-  shoot(player: PlayerState, input: Input, now: number) {
+  shoot(player: PlayerState, input: Input, now: number,index=collisionIndex(this.arena)) {
     const weaponId = weaponForSlot(player.loadout, player.slot), weapon = WEAPONS[weaponId];
     if (this.state !== 'playing' || player.hp <= 0 || player.body.vault || player.reloading > now || player.nextFire > now || (weaponId !== 'knife' && player.ammo[player.slot] <= 0)) return false;
     player.nextFire = now + weapon.fireInterval;
@@ -333,7 +345,7 @@ export class Room {
     const spread = scoped ? weapon.adsSpread : weapon.hipSpread;
     const yaw = player.body.yaw + (Math.random() - .5) * spread, pitch = player.body.pitch + (Math.random() - .5) * spread;
     const dir = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
-    let nearest = worldDistance(from, dir, weapon.range, this.arena);
+    let nearest = worldDistance(from, dir, weapon.range, this.arena,index);
     let target: PlayerState | null = null, headshot = false;
     // Rewind to the opponent timeline actually rendered when this command was
     // created. It already includes the client's adaptive interpolation delay.
@@ -367,7 +379,7 @@ export class Room {
       this.winner = ranked[0] && ranked[0].kills > (ranked[1]?.kills ?? -1) ? ranked[0].id : null;
     } else this.winner = this.teamScores.red === this.teamScores.blue ? null : this.teamScores.red > this.teamScores.blue ? 'red' : 'blue';
     this.state = 'finished'; this.event({ type: 'end', time: now }); this.publish(); this.broadcast(this.snapshot(now)); }
-  botInput(player: PlayerState, rt: Runtime, now: number): Input {
+  botInput(player: PlayerState, rt: Runtime, now: number,index=collisionIndex(this.arena)): Input {
     const input = { ...idleInput(), seq: ++rt.botSeq, time: now, yaw: player.body.yaw, pitch: player.body.pitch };
     const origin = { x: player.body.x, y: player.body.y + eyeHeight(player.body), z: player.body.z };
     const opponents = [...this.players.values()].filter(p => this.enemies(player, p) && p.hp > 0 && p.protectedUntil <= now).sort((a, b) => distance(player.body, a.body) - distance(player.body, b.body));
@@ -375,7 +387,7 @@ export class Room {
     for (const enemy of opponents) {
       const point = { x: enemy.body.x, y: enemy.body.y + bodyHeight(enemy.body) * .65, z: enemy.body.z }, d = distance(origin, point);
       const direction = { x: (point.x - origin.x) / d, y: (point.y - origin.y) / d, z: (point.z - origin.z) / d };
-      if (d < 45 && worldDistance(origin, direction, d, this.arena) >= d - .2) { target = enemy; break; }
+      if (d < 45 && worldDistance(origin, direction, d, this.arena,index) >= d - .2) { target = enemy; break; }
     }
     let destination: Vec3 = target?.body || rt.botGoal;
     if (!target && (now > rt.botThink || distance(player.body, destination) < 2.5)) { rt.botGoal = this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)]; rt.botThink = now + 5; destination = rt.botGoal; }
@@ -393,7 +405,7 @@ export class Room {
     }
     if (!target) {
       if (now >= rt.pathAt || distance(destination, rt.pathTarget) > 3) {
-        rt.path = route(this.arena, player.body, destination); rt.pathTarget = { ...destination }; rt.pathAt = now + 3 + (rt.botSeq % 30) / 30;
+        rt.path = route(this.arena, player.body, destination,index); rt.pathTarget = { ...destination }; rt.pathAt = now + 3 + (rt.botSeq % 30) / 30;
       }
       while (rt.path.length && Math.hypot(rt.path[0].x - player.body.x, rt.path[0].z - player.body.z) < .8) rt.path.shift();
       if (rt.path[0]) destination = rt.path[0];
@@ -440,6 +452,7 @@ export class Room {
   tick(now: number) {
     if (this.state !== 'playing') return;
     this.tickNumber++;
+    const collision=collisionIndex(this.arena);
     if (now >= this.endsAt) { this.finish(now); return; }
     for (const existing of this.players.values()) {
       if (this.state !== 'playing') break;
@@ -471,10 +484,10 @@ export class Room {
       if (rt.droppedAck >= 0) { player.ack = Math.max(player.ack, rt.droppedAck); rt.droppedAck = -1; }
       const count = player.bot ? 1 : Math.min(rt.commandCredit, rt.queue.length);
       for (let index = 0; index < count && this.state === 'playing'; index++) {
-        const input = player.bot ? this.botInput(player, rt, now) : rt.queue.shift()!;
+        const input = player.bot ? this.botInput(player, rt, now,collision) : rt.queue.shift()!;
         if (!player.bot) rt.commandCredit--;
         rt.last = input;
-        player.body = move(player.body, input, DT, this.arena);
+        player.body = move(player.body, input, DT, this.arena,collision);
         if (player.body.vault) player.reloading = 0;
         player.ack = input.seq;
         if (input.slot !== player.slot) { player.slot = input.slot; player.reloading = 0; player.nextFire = Math.max(player.nextFire, now + .2); player.ads = false; rt.fireHeld = false; }
@@ -493,13 +506,13 @@ export class Room {
         // Execute at this command's body/aim/weapon before the next queued
         // command can change them. Every shot still shares the current server
         // time, so a burst of commands cannot bypass weapon fire cooldowns.
-        if (input.fire && !sprinting && (weapon.automatic || !rt.fireHeld)) this.shoot(player, input, now);
+        if (input.fire && !sprinting && (weapon.automatic || !rt.fireHeld)) this.shoot(player, input, now,collision);
         rt.fireHeld = input.fire;
       }
       rt.history.push({ time: now, body: copyBody(player.body), hp: player.hp, protectedUntil: player.protectedUntil });
       while (rt.history.length > 1 && rt.history[0].time < now - .5) rt.history.shift();
     }
-    this.updateGrenades(now);
+    this.updateGrenades(now,collision);
     this.updateFlags(now);
     if (this.tickNumber % 3 === 0) this.broadcast(this.snapshot(now));
   }

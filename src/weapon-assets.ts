@@ -18,6 +18,7 @@ const loader = new GLTFLoader();
 const assets = new Map<WeaponId, Promise<THREE.Group>>();
 const ready = new Map<WeaponId, THREE.Group>();
 const waiting = new Map<THREE.Group, WeaponId>();
+const slides = new WeakMap<THREE.Object3D, THREE.Object3D>();
 
 function cloneModel(source: THREE.Group): THREE.Group {
   const clone = source.clone(true);
@@ -46,8 +47,10 @@ function install(target: THREE.Group, source: THREE.Group) {
     target.remove(fallback);
   }
   const model = cloneModel(source);
+  if(target.userData.castShadow!==undefined)model.traverse(object=>{if(object instanceof THREE.Mesh)object.castShadow=target.userData.castShadow;});
   model.name = 'weaponAsset';
   target.add(model);
+  const slide=model.getObjectByName('slide');if(slide)slides.set(target,slide);
   target.userData.detailedWeapon = true;
   waiting.delete(target);
 }
@@ -91,7 +94,7 @@ export function attachWeaponAsset(target: THREE.Group, id: WeaponId) {
 }
 
 export function releaseWeaponAsset(object: THREE.Object3D) {
-  object.traverse(child => { if (child instanceof THREE.Group) waiting.delete(child); });
+  object.traverse(child => { if (child instanceof THREE.Group) waiting.delete(child);slides.delete(child); });
 }
 
 export function loadWeaponAssets() {
@@ -101,6 +104,7 @@ export function loadWeaponAssets() {
 /** Rigid slide recoil costs one transform and shares the weapon's cached mesh. */
 export function poseWeaponAction(container: THREE.Object3D, id: WeaponId, recoil: number) {
   if(id!=='deagle'&&id!=='glock')return;
-  const slide=container.getObjectByName('slide');
+  let slide=slides.get(container);
+  if(!slide){slide=container.getObjectByName('slide');if(slide)slides.set(container,slide);}
   if(slide)slide.position.z=THREE.MathUtils.clamp(recoil/.11,0,1)*(id==='deagle'?.032:.026);
 }

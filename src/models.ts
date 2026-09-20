@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { applySurfaceDetail, cloneKitModel, loadAssetKit } from './assets';
 import { attachViewmodelArms, loadViewmodelArms, releaseViewmodelArms } from './arms';
 import { attachWeaponAsset, loadWeaponAssets, releaseWeaponAsset } from './weapon-assets';
+import { createDistantSoldier, createDistantWeapon } from './model-lod';
 import type { Body, Team, WeaponId } from '../shared/types';
 
 const steel = new THREE.MeshStandardMaterial({color:0x282b2b,metalness:.82,roughness:.32});
@@ -98,13 +99,11 @@ function batchRigid(g:THREE.Group) {
 function batchCharacter(root:THREE.Group,lowDetail:boolean){
  root.updateMatrixWorld(true);
  const bones:THREE.Bone[]=[],batches=new Map<THREE.Material,THREE.BufferGeometry[]>(),canonical=new Map<string,THREE.Material>();
- const uniform=new THREE.MeshStandardMaterial({color:0x68705a,roughness:.94});
- const gear=new THREE.MeshStandardMaterial({color:0x353e33,roughness:.86});
- const face=new THREE.MeshStandardMaterial({color:0x9a8869,roughness:.95});
- const team=new THREE.MeshStandardMaterial({color:0xbeb696,roughness:.8});team.userData.team=true;
+ const uniform=lowDetail?new THREE.MeshStandardMaterial({vertexColors:true,roughness:.94}):undefined;
+ const team=lowDetail?new THREE.MeshStandardMaterial({color:0xbeb696,roughness:.8}):undefined;if(team)team.userData.team=true;
  function materialFor(source:THREE.Material):THREE.Material{
   const m=source as THREE.MeshStandardMaterial;
-  if(lowDetail){if(m.userData.team)return team;if(m===skin||/suede|nylon/i.test(m.name))return face;return m.color&&Math.max(m.color.r,m.color.g,m.color.b)>.12?uniform:gear;}
+  if(lowDetail)return m.userData.team?team!:uniform!;
   const key=m.userData.team?'team':m.name+':'+m.color?.getHexString()+':'+m.roughness+':'+m.metalness+':'+m.map?.uuid;
   let value=canonical.get(key);if(!value){value=m;canonical.set(key,value);}return value;
  }
@@ -114,6 +113,7 @@ function batchCharacter(root:THREE.Group,lowDetail:boolean){
    if(child instanceof THREE.Mesh){
     const geometry=child.geometry.index?child.geometry.toNonIndexed():new THREE.BufferGeometry().copy(child.geometry);geometry.applyMatrix4(child.matrixWorld);
     const count=geometry.getAttribute('position').count,indices=new Uint16Array(count*4),weights=new Float32Array(count*4);
+    if(lowDetail){const color=(child.material as THREE.MeshStandardMaterial).color,values=new Float32Array(count*3);for(let i=0;i<count;i++)color.toArray(values,i*3);geometry.setAttribute('color',new THREE.BufferAttribute(values,3));}
     for(let i=0;i<count;i++){indices[i*4]=index;weights[i*4]=1;}
     geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
     const material=materialFor(child.material as THREE.Material),list=batches.get(material)??[];list.push(geometry);batches.set(material,list);
@@ -135,6 +135,9 @@ function fromTemplate(key:string,create:()=>THREE.Group,skin=false,lowDetail=fal
  let template=templates.get(key);
  if(!template){template=create();if(skin)batchCharacter(template,lowDetail);else batchRigid(template);templates.set(key,template);}
  const clone=(skin?cloneSkeleton(template):template.clone(true)) as THREE.Group;individualMaterials(clone);
+ // SkeletonUtils clones per mesh. All character material batches use the same
+ // bone palette, so one actor-local skeleton can service every batch.
+ if(skin){let skeleton:THREE.Skeleton|undefined;clone.traverse(object=>{if(object instanceof THREE.SkinnedMesh){if(!skeleton)skeleton=object.skeleton;else if(object.skeleton!==skeleton){object.skeleton.dispose();object.skeleton=skeleton;}}});}
  clone.traverse(o=>{if(o instanceof THREE.Group&&o.userData.kitPart){kitTargets.add(o);replaceKitPart(o);}});
  return clone;
 }
@@ -164,9 +167,7 @@ export function releaseModel(object:THREE.Object3D){
 export function buildWeapon(id:WeaponId,withHands=true,lowDetail=false):THREE.Group {
  const root=new THREE.Group();root.name=id;
  const fallback=fromTemplate('weapon:'+id+':'+lowDetail,()=>{
-  const result=createWeapon(id);
-  if(lowDetail)result.traverse(o=>{if(o instanceof THREE.Mesh)o.material=steel;});
-  return result;
+  return lowDetail?createDistantWeapon(id):createWeapon(id);
  });
  fallback.name='weaponFallback';root.add(fallback);
  if(!lowDetail)attachWeaponAsset(root,id);
@@ -266,6 +267,7 @@ function makeBoot():THREE.Group {
 }
 export function buildSoldier(color=0x69745a,local=false,lowDetail=false):THREE.Group {
  return fromTemplate('soldier:'+color+':'+local+':'+lowDetail,()=>{
+ if(lowDetail&&!local)return createDistantSoldier(color);
  const g=new THREE.Group();const fatigues=new THREE.MeshStandardMaterial({color,roughness:.94});applySurfaceDetail(fatigues,'weave');
  const armor=new THREE.MeshStandardMaterial({color:0x3b4539,roughness:.87});
  const cloth=new THREE.MeshStandardMaterial({color:0x82795b,roughness:.96});
@@ -274,6 +276,7 @@ export function buildSoldier(color=0x69745a,local=false,lowDetail=false):THREE.G
  cube(hips,boot,0,.079,0,.398,.05,.267);
  for(const x of [-.17,.17])cube(hips,cloth,x,.005,-.134,.069,.16,.065);
  const spine=new THREE.Group();spine.name='spine';spine.position.y=.12;hips.add(spine);
+ if(!local){
  ellipsoid(spine,fatigues,0,.187,.019,.466,.5,.273);
  cube(spine,armor,0,.22,-.119,.369,.366,.12);
  cube(spine,armor,0,.234,.142,.346,.34,.13);
@@ -292,6 +295,7 @@ export function buildSoldier(color=0x69745a,local=false,lowDetail=false):THREE.G
  cube(head,lens,0,.109,-.149,.176,.042,.007);
  ellipsoid(head,cloth,0,.029,-.1,.181,.096,.133);
  for(let i=0;i<3;i++)cube(head,pad,-.043+i*.043,.027,-.167,.019,.033,.003);
+ }
  for(const s of [-1,1]) {
   const leg=new THREE.Group();leg.name=s===-1?'leftLeg':'rightLeg';leg.position.set(s*.115,-.018,0);hips.add(leg);
   segment(leg,fatigues,[0,-.02,0],[s*.006,-.405,.002],.09,.076);
@@ -301,6 +305,7 @@ export function buildSoldier(color=0x69745a,local=false,lowDetail=false):THREE.G
   cube(shin,armor,0,.005,-.073,.132,.144,.046);
   cube(shin,pad,0,-.089,.006,.15,.029,.155);
   const foot=makeBoot();foot.position.set(0,-.364,.006);shin.add(foot);
+  if(local)continue;
   const arm=new THREE.Group();arm.name=s===-1?'leftArm':'rightArm';arm.position.set(s*.256,.372,.005);spine.add(arm);
   segment(arm,fatigues,[0,0,0],[s*.015,-.235,-.013],.073,.055);
   ellipsoid(arm,armor,0,-.018,0,.157,.134,.161);
@@ -314,7 +319,7 @@ export function buildSoldier(color=0x69745a,local=false,lowDetail=false):THREE.G
   for(const child of [...hand.children])if(child.name!=='handGeometry'&&child.name!=='blenderGeometry')hand.remove(child);
   forearm.add(hand);
  }
- const held=new THREE.Group();held.name='weaponAnchor';held.position.set(.055,.179,-.21);spine.add(held);
+ if(!local){const held=new THREE.Group();held.name='weaponAnchor';held.position.set(.055,.179,-.21);spine.add(held);}
  return g;
  },!local,lowDetail);
 }
@@ -330,54 +335,64 @@ export function setSoldierTeam(model:THREE.Group,team:Team|null,teammate:boolean
  // Material is unique per actor, while all geometry is shared.
  model.traverse(o=>{if(o instanceof THREE.Mesh){const m=o.material as THREE.MeshStandardMaterial;if(m.color&&m.userData.team){m.color.setHex(color);m.emissive?.setHex(teammate?color:0x000000);m.emissiveIntensity=.12;}}});
 }
+type SoldierRig={hips:THREE.Object3D;spine:THREE.Object3D;head?:THREE.Object3D;anchor?:THREE.Object3D;limbs:{sign:number;leg:THREE.Object3D;shin:THREE.Object3D;foot?:THREE.Object3D;arm?:THREE.Object3D;forearm?:THREE.Object3D}[]};
+const soldierRigs=new WeakMap<THREE.Group,SoldierRig>();
+function soldierRig(model:THREE.Group):SoldierRig{
+ let rig=soldierRigs.get(model);if(rig)return rig;
+ const named=new Map<string,THREE.Object3D>();model.traverse(object=>{if(object.name)named.set(object.name,object);});
+ rig={hips:named.get('hips')!,spine:named.get('spine')!,head:named.get('head'),anchor:named.get('weaponAnchor'),limbs:[]};
+ for(const [side,sign]of [['left',-1],['right',1]]as const){const shin=named.get(side+'Shin')!;rig.limbs.push({sign,leg:named.get(side+'Leg')!,shin,foot:shin.getObjectByName('boot'),arm:named.get(side+'Arm'),forearm:named.get(side+'Forearm')});}
+ soldierRigs.set(model,rig);return rig;
+}
+export function soldierWeaponAnchor(model:THREE.Group):THREE.Object3D{return soldierRig(model).anchor!;}
+const ikDirection=new THREE.Vector3(),ikBend=new THREE.Vector3(),ikElbow=new THREE.Vector3(),ikFore=new THREE.Vector3();
+const ikRotation=new THREE.Quaternion(),down=new THREE.Vector3(0,-1,0);
 export function poseSoldier(model:THREE.Group,body:Body,time:number,dt:number,local=false){
  const target=body.stance==='stand'?0:body.stance==='crouch'?1:2;
  model.userData.stance=THREE.MathUtils.damp(model.userData.stance??target,target,18,dt);
  const stance=model.userData.stance as number,crouch=Math.min(1,stance),slide=Math.max(0,stance-1);
  const vault=body.vault?Math.sin(Math.PI*THREE.MathUtils.clamp(body.vault.elapsed/body.vault.duration,0,1)):0;
- const airborne=body.grounded?0:1;
- model.userData.air=THREE.MathUtils.damp(model.userData.air??airborne,Math.max(airborne,vault),14,dt);
+ // Ordinary jumps leave the legs below the player; only crossing a vault
+ // obstacle brings the knees and boots forward into the first-person view.
+ model.userData.air=THREE.MathUtils.damp(model.userData.air??0,body.vault?1:0,14,dt);
  const lift=model.userData.air as number;
  if(body.grounded&&model.userData.wasGrounded===false)model.userData.land=.075;
  model.userData.wasGrounded=body.grounded;
  model.userData.land=THREE.MathUtils.damp(model.userData.land??0,0,15,dt);
  const landing=model.userData.land as number;
- const hips=model.getObjectByName('hips')!,spine=model.getObjectByName('spine')!;
+ const rig=soldierRig(model),{hips,spine,head,anchor}=rig;
  hips.position.y=THREE.MathUtils.lerp(.91,.43,crouch)-slide*.22-landing;
  hips.position.z=.07*crouch+.06*slide;hips.rotation.x=0;
  spine.position.y=.12-.055*crouch;spine.rotation.x=-.85*crouch+1.9*slide;
- const head=model.getObjectByName('head');if(head)head.rotation.x=body.pitch*.46-spine.rotation.x*.75;
+ if(head)head.rotation.x=body.pitch*.46-spine.rotation.x*.75;
  const speed=Math.hypot(body.vx,body.vz);model.userData.gait=(model.userData.gait??0)+dt*speed*(crouch>0?2.4:1.95);
  const moving=body.grounded?Math.min(1,speed/5):0;
  const gait=Math.sin(model.userData.gait)*(.59-.36*crouch)*moving*(1-slide);
- for(const [side,sign]of [['left',-1],['right',1]] as const){
-  const leg=model.getObjectByName(side+'Leg')!,shin=model.getObjectByName(side+'Shin')!;
+ for(const {sign,leg,shin,foot}of rig.limbs){
   leg.rotation.x=1.33*crouch+.22*slide+gait*sign;leg.rotation.z=sign*(.015+.095*slide);
   shin.rotation.x=-2.33*crouch+2.15*slide-Math.max(0,-gait*sign)*.5;
-  // World-space lower limbs lift toward the chest through takeoff/vault, then
-  // extend into landing. The local pose keeps boot tips in the lower view.
+  // World-space lower limbs lift over the vault and extend into landing.
   const tuck=(local?1.92:.94)+vault*.14+sign*.1*(1-vault);
   leg.rotation.x=THREE.MathUtils.lerp(leg.rotation.x,tuck,lift*(1-slide));
   shin.rotation.x=THREE.MathUtils.lerp(shin.rotation.x,local?-.53:-1.22,lift*(1-slide));
   leg.rotation.z+=sign*vault*.09;
   leg.rotation.x+=landing*2;shin.rotation.x-=landing*3;
-  const foot=shin.getObjectByName('boot');if(foot)foot.rotation.x=THREE.MathUtils.lerp(.9*crouch-1.62*slide,-.55,lift*(1-slide));
+  if(foot)foot.rotation.x=THREE.MathUtils.lerp(.9*crouch-1.62*slide,-.55,lift*(1-slide));
 
  }
- if(local){hips.position.z-=slide*.04;spine.visible=false;}
- const anchor=model.getObjectByName('weaponAnchor');
+ if(local){hips.position.z-=slide*.04;spine.visible=false;return;}
  if(anchor){
   anchor.rotation.x=body.pitch*.6-spine.rotation.x;
-  for(const [side,sign]of [['left',-1],['right',1]] as const){
-   const arm=model.getObjectByName(side+'Arm')!,forearm=model.getObjectByName(side+'Forearm')!;
-   const target=new THREE.Vector3(side==='left'?-.052:.018,side==='left'?-.04:-.104,side==='left'?-.19:.054).applyEuler(anchor.rotation).add(anchor.position);
-   const delta=target.sub(arm.position),distance=Math.min(.481,delta.length()),direction=delta.normalize();
+  for(const limb of rig.limbs){
+   const {sign,arm,forearm}=limb;if(!arm||!forearm)continue;
+   ikDirection.set(sign<0?-.052:.018,sign<0?-.04:-.104,sign<0?-.19:.054).applyEuler(anchor.rotation).add(anchor.position).sub(arm.position);
+   const distance=THREE.MathUtils.clamp(ikDirection.length(),.001,.481);ikDirection.normalize();
    const reach=(.249*.249-.236*.236+distance*distance)/(2*distance),height=Math.sqrt(Math.max(0,.249*.249-reach*reach));
-   const bend=new THREE.Vector3(sign*.55,-.8,.3);bend.addScaledVector(direction,-bend.dot(direction)).normalize();
-   const elbow=direction.clone().multiplyScalar(reach).addScaledVector(bend,height);
-   arm.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0),elbow.clone().normalize());
-   const foreDirection=direction.multiplyScalar(distance).sub(elbow).normalize().applyQuaternion(arm.quaternion.clone().invert());
-   forearm.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0),foreDirection);
+   ikBend.set(sign*.55,-.8,.3);ikBend.addScaledVector(ikDirection,-ikBend.dot(ikDirection)).normalize();
+   ikElbow.copy(ikDirection).multiplyScalar(reach).addScaledVector(ikBend,height);
+   arm.quaternion.setFromUnitVectors(down,ikFore.copy(ikElbow).normalize());
+   ikFore.copy(ikDirection).multiplyScalar(distance).sub(ikElbow).normalize().applyQuaternion(ikRotation.copy(arm.quaternion).invert());
+   forearm.quaternion.setFromUnitVectors(down,ikFore);
   }
  }
 }

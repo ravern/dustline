@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from '../shared/types';
+import { decodeServerMessage, SNAPSHOT_PROTOCOL } from '../shared/wire';
 
 const localTime = () => (performance.timeOrigin + performance.now()) / 1000;
 const SESSION_KEY = 'dustline.session';
@@ -51,7 +52,7 @@ export class Network {
     this.socket?.close();
     this.connected = false;
     this.awaitingResume = !!this.token;
-    const socket = this.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    const socket = this.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`, SNAPSHOT_PROTOCOL);
     socket.addEventListener('open', () => {
       if (gen !== this.generation) return;
       this.lastHeard = performance.now();
@@ -63,8 +64,8 @@ export class Network {
       }, 1500);
     });
     socket.addEventListener('message', (event) => {
-      let message: ServerMessage;
-      try { message = JSON.parse(event.data) as ServerMessage; if (!message || typeof message.type !== 'string') return; } catch { return; }
+      if (typeof event.data !== 'string') return;
+      const message = decodeServerMessage(event.data); if (!message) return;
       const deliver = () => {
         if (gen !== this.generation) return;
         this.lastHeard = performance.now();

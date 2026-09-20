@@ -192,18 +192,24 @@ test('sidearms have distinct silhouettes, textured materials and independent mov
   }
 });
 
-test('local boots tuck into jump and vault poses and return to planted stance', () => {
+test('ordinary jumps keep boots below the player, while vaults and slides expose the legs', () => {
   const model=buildLocalBody();let body=spawnBody({x:0,y:0,z:0});
   const foot=model.getObjectByName('leftShin')!.getObjectByName('boot')!;
   const location=()=>{model.updateMatrixWorld(true);return foot.getWorldPosition(new THREE.Vector3());};
   const advance=()=>{for(let i=0;i<100;i++)poseSoldier(model,body,i/60,1/60,true);};
   advance();const grounded=location();
   body={...body,grounded:false,vy:4};advance();const jumping=location();
-  assert.ok(jumping.y>grounded.y+.4,'airborne boots must rise, not hang at standing length');
-  assert.ok(jumping.z<grounded.z-.4,'knees should project the boots into the lower view');
+  assert.ok(jumping.distanceTo(grounded)<.002,'ordinary jumps must not pull boots into the view');
   body={...body,stance:'crouch',vault:{elapsed:.27,duration:.54,from:{x:0,y:0,z:0},to:{x:0,y:.6,z:-1.5},height:1}};advance();
   const vaulting=location();assert.ok(vaulting.y>grounded.y+.1);assert.ok(vaulting.z<grounded.z-.4);
+  body={...body,stance:'slide',vault:undefined,grounded:true};advance();
+  assert.ok(location().z<grounded.z-.35,'sliding still extends the feet forward');
   body={...body,stance:'stand',vault:undefined,grounded:true,vy:0};advance();
   assert.ok(location().distanceTo(grounded)<.002,'landing should settle back into the original stance');
+  for(let i=0;i<17;i++){
+    body={...body,stance:'crouch',grounded:false,vault:{elapsed:i/60,duration:.54,from:{x:0,y:0,z:0},to:{x:0,y:0,z:-1.5},height:1}};
+    poseSoldier(model,body,i/60,1/60,true);
+  }
+  assert.ok(location().y>grounded.y+.35&&location().z<grounded.z-.55,'the real half-second vault must raise the boots before it ends');
   dispose(model);
 });

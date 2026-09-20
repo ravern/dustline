@@ -46,7 +46,7 @@ Default controls:
 | Scoreboard | Hold Tab |
 | Release mouse | Escape |
 
-Crouch lowers the camera and collision body; standing requires overhead clearance. Sliding lowers the body further and shows your legs and boots. Remote players bend their hips and knees into these stances. The Intervention reaches aimed accuracy after 160 ms. Health regenerates after five seconds without damage and respawns take five seconds. Space near suitable cover vaults over it when the full route and landing have clearance. Jumping and vaulting show your legs and tuck your knees. Grenades bounce off the same collision geometry as players; solid cover blocks blast damage and flashes. Frags can damage their owner, and looking away reduces a flash. Bots take time to acquire a target and fire in inaccurate bursts.
+Crouch lowers the camera and collision body; standing requires overhead clearance. Sliding lowers the body further and shows your legs and boots. Remote players bend their hips and knees into these stances. The Intervention reaches aimed accuracy after 160 ms. Health regenerates after five seconds without damage and respawns take five seconds. Space near suitable cover vaults over it when the full route and landing have clearance. Vaulting tucks your knees into view; ordinary jumps keep your feet below the camera. Grenades bounce off the same collision geometry as players; solid cover blocks blast damage and flashes. Frags can damage their owner, and looking away reduces a flash. Bots take time to acquire a target and fire in inaccurate bursts.
 
 ## Visual assets and performance
 
@@ -56,7 +56,7 @@ Each weapon has its own recoil impulse, recovery, handling inertia, and draw tim
 
 The original prop kit contains boots, crates, drums, and concrete barriers. Regenerate `art/dustline-kit.blend` and its approximately 400 KB game export with Blender's `--background --python tools/build-assets.py`. The included game assets run without additional downloads from asset services.
 
-Static scenery is batched by material; reused props are instanced. Player and weapon geometry is cached, decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows, reduces internal render resolution, hides optional scenery and particles, and reduces distant character animation and transient effects while retaining gameplay cover and objectives. **High** uses directional shadows and weapon self shadows. Each map has a matching sky and reflection environment; turning and entering cover change the lighting on the weapon and arms. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware.
+Eight shared, generated 1K material tiles cover terrain, roads, walls, metal, timber, and upholstery, with world-scale mapping that avoids stretched surfaces. The WebP tile bank is about 2.3 MiB; prompts and asset details are in [art/textures](art/textures/README.md). Static scenery is batched by material; reused props are instanced and static transforms are computed once. Distant actors use simplified geometry and one shared skeleton, while scope magnification restores close detail. Actor variants, weapon geometry, and shot effects are reused. Decorative lighting avoids per-prop shadow maps, and pixel ratio is capped. **Performance** graphics turns off shadows, reduces internal render resolution, hides optional scenery and particles, skips world bump-map sampling, and reduces distant character animation and transient effects while retaining gameplay cover and objectives. **High** uses directional shadows and weapon self shadows. Each map has a matching sky and reflection environment; turning and entering cover change the lighting on the weapon and arms. The browser test suite records draw calls, triangles, and observed frame rate; results depend on browser and hardware. See [performance methodology and measurements](PERFORMANCE.md).
 
 ## Multiplayer
 
@@ -84,6 +84,7 @@ npm run test:modes-browser
 npm run test:armory-browser
 npm run test:vault-browser
 npm run test:multiplayer
+DUSTLINE_URL=http://localhost:3000 npm run test:performance-browser
 ```
 
 The automated tests cover movement, map traversal, capacity, teams, CTF objectives, weapons, latency, input validation, and reconnect sessions. Browser tests use real input for movement and combat and save evidence to ignored `test-results/`. If a restricted environment blocks the `tsx` CLI socket, run `node --import tsx --test tests/*.test.ts`.
